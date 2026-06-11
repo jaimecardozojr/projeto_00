@@ -232,42 +232,45 @@ def pagina_metas(email_alvo, modo_admin):
     with st.expander("📖 Como usar esta área"):
         if modo_admin:
             st.markdown("""
-            Crie metas para o usuário selecionado (ex: *Chegar a 70 kg*), com valor
-            inicial, alvo e unidade. Você pode atualizar o progresso ou excluir.
+            Aqui você vê as metas que **o usuário criou** (as expectativas dele) e também
+            pode **criar metas** para ele. Cada meta tem valor inicial, alvo e unidade.
+            Dá para atualizar o progresso ou excluir.
             """)
         else:
             st.markdown("""
-            Aqui estão as metas definidas para você. Conforme avança, abra a meta e
-            registre seu **valor atual** — a barra mostra o quanto já alcançou.
+            **Crie aqui as suas metas** — o que você espera alcançar (ex: *Chegar a 70 kg*,
+            *Correr 5 km*). Defina o valor inicial, o alvo e a unidade. Conforme avança,
+            abra a meta e registre seu **valor atual**; a barra mostra o quanto já alcançou.
+            Seu treinador também acompanha essas metas.
             """)
 
-    if modo_admin:
-        with st.expander("➕ Nova meta"):
-            with st.form("form_meta", clear_on_submit=True):
-                col = st.columns(2)
-                titulo = col[0].text_input("Nome da meta *", placeholder="Ex: Chegar a 70 kg")
-                categoria = col[1].selectbox("Categoria",
-                                             ["Alimentação", "Exercícios", "Peso", "Outro"])
-                descricao = st.text_input("Descrição (opcional)")
-                col2 = st.columns(3)
-                v_ini = col2[0].number_input("Valor inicial", value=0.0, step=0.5)
-                v_alvo = col2[1].number_input("Valor alvo", value=0.0, step=0.5)
-                unidade = col2[2].text_input("Unidade", placeholder="kg, reps, L...")
-                prazo = st.date_input("Prazo (opcional)", value=None, format="DD/MM/YYYY")
-                ok = st.form_submit_button("💾 Salvar meta", width='stretch')
-            if ok:
-                if not titulo.strip():
-                    st.error("Dê um nome para a meta.")
-                else:
-                    db.criar_meta(email_alvo, categoria, titulo.strip(), descricao.strip(),
-                                  v_ini, v_alvo, unidade.strip(),
-                                  prazo.strftime("%Y-%m-%d") if prazo else "")
-                    st.success("Meta criada!")
-                    st.rerun()
+    with st.expander("➕ Nova meta", expanded=False):
+        with st.form("form_meta", clear_on_submit=True):
+            col = st.columns(2)
+            titulo = col[0].text_input("Nome da meta *", placeholder="Ex: Chegar a 70 kg")
+            categoria = col[1].selectbox("Categoria",
+                                         ["Alimentação", "Exercícios", "Peso", "Outro"])
+            descricao = st.text_input("Descrição (opcional)")
+            col2 = st.columns(3)
+            v_ini = col2[0].number_input("Valor inicial", value=0.0, step=0.5)
+            v_alvo = col2[1].number_input("Valor alvo", value=0.0, step=0.5)
+            unidade = col2[2].text_input("Unidade", placeholder="kg, reps, L...")
+            prazo = st.date_input("Prazo (opcional)", value=None, format="DD/MM/YYYY")
+            ok = st.form_submit_button("💾 Salvar meta", width='stretch')
+        if ok:
+            if not titulo.strip():
+                st.error("Dê um nome para a meta.")
+            else:
+                db.criar_meta(email_alvo, categoria, titulo.strip(), descricao.strip(),
+                              v_ini, v_alvo, unidade.strip(),
+                              prazo.strftime("%Y-%m-%d") if prazo else "")
+                st.success("Meta criada!")
+                st.rerun()
 
     metas = db.listar_metas(email_alvo)
     if metas.empty:
-        st.info("Nenhuma meta ainda." if modo_admin else "Você ainda não tem metas.")
+        st.info("Nenhuma meta ainda." if modo_admin
+                else "Você ainda não criou metas. Crie a primeira em *➕ Nova meta*.")
         return
 
     for _, m in metas.iloc[::-1].iterrows():
@@ -292,8 +295,7 @@ def pagina_metas(email_alvo, modo_admin):
                                       index=1 if concluida else 0, key=f"s_{m['id']}")
                 colb = st.columns(2)
                 salvar = colb[0].form_submit_button("💾 Salvar", width='stretch')
-                excluir = (modo_admin and
-                           colb[1].form_submit_button("🗑️ Excluir meta", width='stretch'))
+                excluir = colb[1].form_submit_button("🗑️ Excluir meta", width='stretch')
             if salvar:
                 db.atualizar_meta(m["id"], novo, status)
                 st.rerun()
