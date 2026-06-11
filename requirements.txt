@@ -3,6 +3,7 @@ pandas>=2.0
 plotly>=5.20
 Pillow>=10.0
 streamlit-option-menu>=0.3.12
+extra-streamlit-components>=0.1.80
 gspread>=6.0
 google-auth>=2.28
 google-api-python-client>=2.120

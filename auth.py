@@ -5,10 +5,14 @@ lista de emails em st.secrets["auth"]["admin_emails"].
 """
 from __future__ import annotations
 
+import base64
 import binascii
 import hashlib
+import hmac
+import json
 import os
 import re
+import time
 from datetime import datetime
 
 import streamlit as st
@@ -67,3 +71,49 @@ def autenticar(email: str, senha: str) -> dict | None:
     # honra a lista de admins do config mesmo que tenha mudado depois do cadastro
     u["perfil"] = "admin" if is_admin(email) else u.get("perfil", "usuario")
     return u
+
+
+def carregar_usuario(email: str) -> dict | None:
+    """Recarrega os dados do usuario (usado no auto-login por cookie)."""
+    u = db.get_usuario(email)
+    if u:
+        u["perfil"] = "admin" if is_admin(email) else u.get("perfil", "usuario")
+    return u
+
+
+# --------------------------------------------------------------------------
+# Token assinado para "manter conectado" (cookie). Assinado com HMAC usando
+# a chave privada do Google (segredo que o app ja possui) -> nao da pra forjar.
+# --------------------------------------------------------------------------
+def _cookie_secret() -> bytes:
+    material = ""
+    try:
+        material = st.secrets["gcp_service_account"]["private_key"]
+    except Exception:
+        try:
+            with open(db.SERVICE_ACCOUNT_FILE, encoding="utf-8") as f:
+                material = json.load(f).get("private_key", "")
+        except Exception:
+            material = "fallback-local-dev"
+    return hashlib.sha256(("acomp::" + material).encode()).digest()
+
+
+def gerar_token(email: str, dias: int = 30) -> str:
+    exp = int(time.time()) + dias * 86400
+    payload = f"{email.lower()}|{exp}"
+    sig = hmac.new(_cookie_secret(), payload.encode(), hashlib.sha256).hexdigest()
+    return base64.urlsafe_b64encode(f"{payload}|{sig}".encode()).decode()
+
+
+def validar_token(token: str) -> str | None:
+    """Retorna o email se o token for valido e nao expirado; senao None."""
+    try:
+        raw = base64.urlsafe_b64decode(token.encode()).decode()
+        email, exp, sig = raw.rsplit("|", 2)
+        if int(exp) < time.time():
+            return None
+        esperado = hmac.new(_cookie_secret(), f"{email}|{exp}".encode(),
+                            hashlib.sha256).hexdigest()
+        return email if hmac.compare_digest(esperado, sig) else None
+    except Exception:
+        return None

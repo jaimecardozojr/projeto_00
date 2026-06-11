@@ -3,8 +3,9 @@ App de Acompanhamento (multiusuario) - Tarefas, Metas e Evolucao
 Login com perfis: ADMIN (gerencia todos) e USUARIO (cumpre as proprias tarefas).
 Rode com:  python -m streamlit run app.py
 """
-from datetime import date
+from datetime import date, datetime, timedelta
 
+import extra_streamlit_components as stx
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -12,6 +13,8 @@ from streamlit_option_menu import option_menu
 
 import auth
 import storage as db
+
+COOKIE = "acomp_token"
 
 # --------------------------------------------------------------------------
 # Configuracao da pagina + estilo
@@ -76,11 +79,15 @@ def tela_login():
             with st.form("login"):
                 email = st.text_input("Email")
                 senha = st.text_input("Senha", type="password")
+                manter = st.checkbox("Manter conectado neste dispositivo", value=True)
                 ok = st.form_submit_button("Entrar", width='stretch')
             if ok:
                 user = auth.autenticar(email, senha)
                 if user:
                     st.session_state["user"] = user
+                    if manter:
+                        cookie_mgr.set(COOKIE, auth.gerar_token(user["email"]),
+                                       expires_at=datetime.now() + timedelta(days=30))
                     st.rerun()
                 else:
                     st.error("Email ou senha incorretos.")
@@ -525,6 +532,10 @@ def app_principal(user):
 
         st.divider()
         if st.button("🚪 Sair", width='stretch'):
+            try:
+                cookie_mgr.delete(COOKIE)
+            except Exception:
+                pass
             st.session_state.clear()
             st.rerun()
 
@@ -558,6 +569,18 @@ def app_principal(user):
 # ==========================================================================
 # ENTRADA
 # ==========================================================================
+cookie_mgr = stx.CookieManager(key="cookie_mgr")
+
+# Auto-login: se ja tem um cookie valido, entra sem pedir senha de novo.
+if "user" not in st.session_state:
+    token = cookie_mgr.get(COOKIE)
+    if token:
+        email_cookie = auth.validar_token(token)
+        if email_cookie:
+            u = auth.carregar_usuario(email_cookie)
+            if u:
+                st.session_state["user"] = u
+
 if "user" not in st.session_state:
     tela_login()
 else:

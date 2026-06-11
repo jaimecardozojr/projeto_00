@@ -4,6 +4,7 @@ data/
 .streamlit/secrets.toml
 service_account.json
 *.json
+secrets_para_streamlit_cloud.txt
 # Python
 __pycache__/
 *.pyc
