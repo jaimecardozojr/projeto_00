@@ -499,6 +499,15 @@ def pagina_usuarios():
             <p>⏳ {pend} pendentes &nbsp;•&nbsp; ✅ {ok} concluídas</p>
         </div>""", unsafe_allow_html=True)
 
+        with st.expander("🔑 Redefinir senha desta pessoa"):
+            with st.form(f"reset_{u['email']}", clear_on_submit=True):
+                nova = st.text_input("Nova senha provisória", type="password",
+                                     key=f"ns_{u['email']}")
+                ok_reset = st.form_submit_button("Redefinir senha", width='stretch')
+            if ok_reset:
+                sucesso, msg = auth.redefinir_senha(u["email"], nova)
+                (st.success if sucesso else st.error)(msg)
+
 
 # ==========================================================================
 # BARRA LATERAL + ROTEAMENTO

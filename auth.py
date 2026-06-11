@@ -73,6 +73,18 @@ def autenticar(email: str, senha: str) -> dict | None:
     return u
 
 
+def redefinir_senha(email: str, nova_senha: str) -> tuple[bool, str]:
+    """Admin define uma nova senha provisoria para um usuario."""
+    email = email.strip().lower()
+    if len(nova_senha) < 4:
+        return False, "A nova senha deve ter ao menos 4 caracteres."
+    if not db.get_usuario(email):
+        return False, "Usuário não encontrado."
+    salt = os.urandom(16).hex()
+    db.atualizar_usuario(email, {"senha_hash": _hash(nova_senha, salt), "salt": salt})
+    return True, "Senha redefinida! Informe a nova senha à pessoa."
+
+
 def carregar_usuario(email: str) -> dict | None:
     """Recarrega os dados do usuario (usado no auto-login por cookie)."""
     u = db.get_usuario(email)
