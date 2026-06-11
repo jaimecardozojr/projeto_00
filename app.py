@@ -519,12 +519,13 @@ def app_principal(user):
 
         escolha = option_menu(
             menu_title=None, options=opcoes, icons=icones, default_index=0,
+            key="menu_nav",
             styles={
                 "container": {"background-color": "#0f172a"},
                 "icon": {"color": "#22c55e", "font-size": "17px"},
                 "nav-link": {"font-size": "15px", "--hover-color": "#1e293b"},
                 "nav-link-selected": {"background-color": "#16a34a"},
-            })
+            }) or "Início"
 
         # Admin escolhe qual usuario gerenciar nas paginas por-usuario
         email_alvo, nome_alvo = None, None
@@ -590,6 +591,9 @@ if "user" not in st.session_state:
             u = auth.carregar_usuario(email_cookie)
             if u:
                 st.session_state["user"] = u
+                # rerun "limpo": redesenha tudo num ciclo normal, evitando que o
+                # menu da barra lateral nao pinte por causa do ciclo do componente.
+                st.rerun()
 
 if "user" not in st.session_state:
     tela_login()
