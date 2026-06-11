@@ -47,6 +47,10 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Gerenciador de cookie criado no TOPO para o componente montar cedo e
+# conseguir ler o cookie logo no carregamento da pagina.
+cookie_mgr = stx.CookieManager(key="cookie_mgr")
+
 
 def chip_status(status: str) -> str:
     if status == "Concluida":
@@ -86,8 +90,13 @@ def tela_login():
                 if user:
                     st.session_state["user"] = user
                     if manter:
+                        # grava o cookie e PARA o run; o proprio componente de
+                        # cookie dispara o rerun depois de gravar no navegador
+                        # (chamar st.rerun() aqui cancelaria a gravacao).
                         cookie_mgr.set(COOKIE, auth.gerar_token(user["email"]),
                                        expires_at=datetime.now() + timedelta(days=30))
+                        st.success("Entrando...")
+                        st.stop()
                     st.rerun()
                 else:
                     st.error("Email ou senha incorretos.")
@@ -569,11 +578,12 @@ def app_principal(user):
 # ==========================================================================
 # ENTRADA
 # ==========================================================================
-cookie_mgr = stx.CookieManager(key="cookie_mgr")
-
 # Auto-login: se ja tem um cookie valido, entra sem pedir senha de novo.
 if "user" not in st.session_state:
-    token = cookie_mgr.get(COOKIE)
+    try:
+        token = cookie_mgr.get(COOKIE)
+    except Exception:
+        token = None
     if token:
         email_cookie = auth.validar_token(token)
         if email_cookie:
