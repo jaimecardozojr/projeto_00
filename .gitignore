@@ -1,0 +1,12 @@
+# Dados locais e fotos (nao versionar)
+data/
+# Segredos
+.streamlit/secrets.toml
+service_account.json
+*.json
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
