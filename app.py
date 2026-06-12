@@ -810,6 +810,11 @@ def pagina_plano_ia(user):
         dias_treino = c3[0].number_input("Treinos/semana", 1, 7, 3)
         local = c3[1].selectbox("Local do treino", ["Academia", "Casa", "Ar livre"])
         calorias = c3[2].number_input("Calorias/dia (0 = IA decide)", 0, 6000, 0, step=50)
+        refeicoes = st.multiselect(
+            "Refeições da dieta (escolha quais quer)",
+            ["Café da manhã", "Lanche da manhã", "Almoço", "Lanche da tarde",
+             "Jantar", "Ceia"],
+            default=["Café da manhã", "Almoço", "Lanche da tarde", "Jantar"])
         restricoes = st.text_input("Restrições/preferências alimentares (opcional)")
         obs = st.text_input("Observações (opcional)")
         gerar = st.form_submit_button("✨ Gerar plano", width='stretch')
@@ -825,7 +830,8 @@ def pagina_plano_ia(user):
         params = {
             "objetivo": objetivo, "nivel": nivel, "perfil": "; ".join(perfil),
             "dias_treino": int(dias_treino), "local": local,
-            "calorias": int(calorias), "restricoes": restricoes, "obs": obs}
+            "calorias": int(calorias), "restricoes": restricoes, "obs": obs,
+            "refeicoes": refeicoes}
         try:
             with st.spinner("Montando o plano com a IA... (pode levar alguns segundos)"):
                 plano = ia.gerar_plano(tipo, params)

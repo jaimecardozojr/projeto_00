@@ -103,6 +103,14 @@ def gerar_plano(tipo: str, dados: dict) -> dict:
             ctx.append(f"Meta de ~{dados['calorias']} kcal por dia.")
         else:
             ctx.append("Estime as calorias diarias adequadas ao objetivo.")
+        refs = dados.get("refeicoes")
+        if refs:
+            ctx.append("Inclua EXATAMENTE estas refeicoes (uma entrada para cada, "
+                       "nessa ordem): " + ", ".join(refs) + ".")
+        ctx.append("IMPORTANTE: priorize alimentos BASICOS, BARATOS e de facil acesso "
+                   "no Brasil (ex: arroz, feijao, ovo, frango, carne moida, banana, "
+                   "aveia, batata, mandioca, legumes comuns). Evite itens caros, "
+                   "importados ou exoticos e suplementos.")
         if dados.get("restricoes"):
             ctx.append(f"Restricoes/preferencias alimentares: {dados['restricoes']}.")
     if dados.get("obs"):
