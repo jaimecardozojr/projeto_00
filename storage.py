@@ -302,13 +302,26 @@ def get_storage():
     return LocalStorage()
 
 
+# --------------------------------------------------------------------------
+# Cache de leitura: evita estourar a cota da API do Google Sheets.
+# Cada tabela e lida no maximo 1x a cada TTL; escritas invalidam o cache.
+# --------------------------------------------------------------------------
+@st.cache_data(ttl=45, show_spinner=False)
+def _ler(tabela: str) -> pd.DataFrame:
+    return get_storage().read(tabela)
+
+
+def _invalidar():
+    _ler.clear()
+
+
 # ---------- Usuarios ----------
 def listar_usuarios() -> pd.DataFrame:
-    return get_storage().read("usuarios")
+    return _ler("usuarios")
 
 
 def get_usuario(email: str) -> dict | None:
-    df = get_storage().read("usuarios")
+    df = _ler("usuarios")
     if df.empty:
         return None
     m = df[df["email"].str.lower() == str(email).lower()]
@@ -317,15 +330,17 @@ def get_usuario(email: str) -> dict | None:
 
 def criar_usuario(linha: dict):
     get_storage().append("usuarios", linha)
+    _invalidar()
 
 
 def atualizar_usuario(email: str, campos: dict):
     get_storage().update("usuarios", email, campos)
+    _invalidar()
 
 
 # ---------- Tarefas ----------
 def listar_tarefas(usuario_email: str, categoria: str | None = None) -> pd.DataFrame:
-    df = get_storage().read("tarefas")
+    df = _ler("tarefas")
     if not df.empty:
         df = df[df["usuario_email"] == usuario_email]
     if categoria:
@@ -334,7 +349,7 @@ def listar_tarefas(usuario_email: str, categoria: str | None = None) -> pd.DataF
 
 
 def listar_todas_tarefas() -> pd.DataFrame:
-    return get_storage().read("tarefas")
+    return _ler("tarefas")
 
 
 def criar_tarefa(usuario_email, categoria, titulo, descricao, prazo, recorrente_id=""):
@@ -344,6 +359,7 @@ def criar_tarefa(usuario_email, categoria, titulo, descricao, prazo, recorrente_
         "status": "Pendente", "foto_ref": "", "data_criacao": _now(),
         "data_conclusao": "", "observacao": "", "recorrente_id": recorrente_id,
     })
+    _invalidar()
 
 
 def concluir_tarefa(id_, foto_bytes, nome_arquivo, observacao):
@@ -353,21 +369,24 @@ def concluir_tarefa(id_, foto_bytes, nome_arquivo, observacao):
         "status": "Concluida", "foto_ref": ref,
         "data_conclusao": _now(), "observacao": observacao,
     })
+    _invalidar()
 
 
 def reabrir_tarefa(id_):
     get_storage().update("tarefas", id_, {
         "status": "Pendente", "data_conclusao": "",
     })
+    _invalidar()
 
 
 def excluir_tarefa(id_):
     get_storage().delete("tarefas", id_)
+    _invalidar()
 
 
 # ---------- Tarefas recorrentes ----------
 def listar_recorrentes(usuario_email: str, categoria: str | None = None) -> pd.DataFrame:
-    df = get_storage().read("recorrentes")
+    df = _ler("recorrentes")
     if not df.empty:
         df = df[df["usuario_email"] == usuario_email]
         if categoria:
@@ -382,12 +401,14 @@ def criar_recorrente(usuario_email, categoria, titulo, descricao, frequencia, di
         "titulo": titulo, "descricao": descricao, "frequencia": frequencia,
         "dias_semana": dias_semana, "ativo": "sim", "data_criacao": _now(),
     })
+    _invalidar()
     gerar_recorrentes_do_dia(usuario_email)  # ja cria a de hoje, se aplicavel
     return rid
 
 
 def excluir_recorrente(id_):
     get_storage().delete("recorrentes", id_)
+    _invalidar()
 
 
 def _vale_hoje(rec, hoje) -> bool:
@@ -407,7 +428,7 @@ def gerar_recorrentes_do_dia(usuario_email: str):
         return
     hoje = datetime.now().date()
     hoje_str = hoje.strftime("%Y-%m-%d")
-    tarefas = get_storage().read("tarefas")
+    tarefas = _ler("tarefas")
     if not tarefas.empty:
         tarefas = tarefas[tarefas["usuario_email"] == usuario_email]
     for _, rec in recs.iterrows():
@@ -425,7 +446,7 @@ def gerar_recorrentes_do_dia(usuario_email: str):
 
 # ---------- Metas ----------
 def listar_metas(usuario_email: str) -> pd.DataFrame:
-    df = get_storage().read("metas")
+    df = _ler("metas")
     if not df.empty:
         df = df[df["usuario_email"] == usuario_email]
     return df
@@ -440,19 +461,22 @@ def criar_meta(usuario_email, categoria, titulo, descricao, valor_inicial,
         "unidade": unidade, "prazo": prazo, "status": "Em andamento",
         "data_criacao": _now(),
     })
+    _invalidar()
 
 
 def atualizar_meta(id_, valor_atual, status):
     get_storage().update("metas", id_, {"valor_atual": valor_atual, "status": status})
+    _invalidar()
 
 
 def excluir_meta(id_):
     get_storage().delete("metas", id_)
+    _invalidar()
 
 
 # ---------- Evolucao ----------
 def listar_evolucao(usuario_email: str) -> pd.DataFrame:
-    df = get_storage().read("evolucao")
+    df = _ler("evolucao")
     if not df.empty:
         df = df[df["usuario_email"] == usuario_email]
         df = df.sort_values("data")
@@ -466,11 +490,17 @@ def registrar_evolucao(usuario_email, data, peso, cintura, quadril, braco,
         "peso": peso, "cintura": cintura, "quadril": quadril, "braco": braco,
         "coxa": coxa, "peito": peito, "observacao": observacao,
     })
+    _invalidar()
 
 
 def excluir_evolucao(id_):
     get_storage().delete("evolucao", id_)
+    _invalidar()
 
 
+# fotos nao mudam -> cache longo, reduz muito as leituras na planilha
+@st.cache_data(ttl=3600, show_spinner=False)
 def ler_foto(ref: str) -> bytes | None:
+    if not ref:
+        return None
     return get_storage().ler_foto(ref)
