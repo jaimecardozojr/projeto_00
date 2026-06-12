@@ -29,6 +29,7 @@ SCHEMAS = {
     "tarefas": [
         "id", "usuario_email", "categoria", "titulo", "descricao", "prazo",
         "status", "foto_ref", "data_criacao", "data_conclusao", "observacao",
+        "recorrente_id",
     ],
     "metas": [
         "id", "usuario_email", "categoria", "titulo", "descricao", "valor_inicial",
@@ -37,6 +38,10 @@ SCHEMAS = {
     "evolucao": [
         "id", "usuario_email", "data", "peso", "cintura", "quadril", "braco",
         "coxa", "peito", "observacao",
+    ],
+    "recorrentes": [
+        "id", "usuario_email", "categoria", "titulo", "descricao", "frequencia",
+        "dias_semana", "ativo", "data_criacao",
     ],
 }
 
@@ -332,12 +337,12 @@ def listar_todas_tarefas() -> pd.DataFrame:
     return get_storage().read("tarefas")
 
 
-def criar_tarefa(usuario_email, categoria, titulo, descricao, prazo):
+def criar_tarefa(usuario_email, categoria, titulo, descricao, prazo, recorrente_id=""):
     get_storage().append("tarefas", {
         "id": _new_id(), "usuario_email": usuario_email, "categoria": categoria,
         "titulo": titulo, "descricao": descricao, "prazo": prazo,
         "status": "Pendente", "foto_ref": "", "data_criacao": _now(),
-        "data_conclusao": "", "observacao": "",
+        "data_conclusao": "", "observacao": "", "recorrente_id": recorrente_id,
     })
 
 
@@ -358,6 +363,64 @@ def reabrir_tarefa(id_):
 
 def excluir_tarefa(id_):
     get_storage().delete("tarefas", id_)
+
+
+# ---------- Tarefas recorrentes ----------
+def listar_recorrentes(usuario_email: str, categoria: str | None = None) -> pd.DataFrame:
+    df = get_storage().read("recorrentes")
+    if not df.empty:
+        df = df[df["usuario_email"] == usuario_email]
+        if categoria:
+            df = df[df["categoria"] == categoria]
+    return df
+
+
+def criar_recorrente(usuario_email, categoria, titulo, descricao, frequencia, dias_semana):
+    rid = _new_id()
+    get_storage().append("recorrentes", {
+        "id": rid, "usuario_email": usuario_email, "categoria": categoria,
+        "titulo": titulo, "descricao": descricao, "frequencia": frequencia,
+        "dias_semana": dias_semana, "ativo": "sim", "data_criacao": _now(),
+    })
+    gerar_recorrentes_do_dia(usuario_email)  # ja cria a de hoje, se aplicavel
+    return rid
+
+
+def excluir_recorrente(id_):
+    get_storage().delete("recorrentes", id_)
+
+
+def _vale_hoje(rec, hoje) -> bool:
+    if str(rec.get("ativo", "sim")).lower() != "sim":
+        return False
+    if rec.get("frequencia") == "Diária":
+        return True
+    # Semanal: dias_semana = indices separados por virgula (0=Seg ... 6=Dom)
+    dias = [d.strip() for d in str(rec.get("dias_semana", "")).split(",") if d.strip() != ""]
+    return str(hoje.weekday()) in dias
+
+
+def gerar_recorrentes_do_dia(usuario_email: str):
+    """Cria as tarefas de hoje a partir dos modelos recorrentes (sem duplicar)."""
+    recs = listar_recorrentes(usuario_email)
+    if recs.empty:
+        return
+    hoje = datetime.now().date()
+    hoje_str = hoje.strftime("%Y-%m-%d")
+    tarefas = get_storage().read("tarefas")
+    if not tarefas.empty:
+        tarefas = tarefas[tarefas["usuario_email"] == usuario_email]
+    for _, rec in recs.iterrows():
+        if not _vale_hoje(rec, hoje):
+            continue
+        ja_existe = False
+        if not tarefas.empty:
+            mesma = tarefas[(tarefas["recorrente_id"] == rec["id"]) &
+                            (tarefas["data_criacao"].str.startswith(hoje_str))]
+            ja_existe = not mesma.empty
+        if not ja_existe:
+            criar_tarefa(usuario_email, rec["categoria"], rec["titulo"],
+                         rec["descricao"], "", recorrente_id=rec["id"])
 
 
 # ---------- Metas ----------

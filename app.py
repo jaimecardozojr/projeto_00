@@ -66,6 +66,44 @@ def num(v, padrao=0.0):
         return padrao
 
 
+def _streak(datas_iso: set) -> int:
+    """Dias consecutivos (terminando hoje ou ontem) com ao menos 1 tarefa concluida."""
+    hoje = date.today()
+    inicio = hoje if hoje.isoformat() in datas_iso else hoje - timedelta(days=1)
+    if inicio.isoformat() not in datas_iso:
+        return 0
+    n, d = 0, inicio
+    while d.isoformat() in datas_iso:
+        n += 1
+        d -= timedelta(days=1)
+    return n
+
+
+def garantir_recorrentes(email):
+    """Gera as tarefas recorrentes de hoje uma vez por sessao/dia (evita reler a planilha)."""
+    chave = f"gen_{email}_{date.today().isoformat()}"
+    if not st.session_state.get(chave):
+        db.gerar_recorrentes_do_dia(email)
+        st.session_state[chave] = True
+
+
+DIAS_SEMANA = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+
+
+def stats_tarefas(df) -> dict:
+    total = len(df)
+    ok = int((df["status"] == "Concluida").sum()) if total else 0
+    adesao = round(100 * ok / total) if total else 0
+    datas = set()
+    if total:
+        for v in df[df["status"] == "Concluida"]["data_conclusao"]:
+            v = str(v)
+            if len(v) >= 10:
+                datas.add(v[:10])
+    return {"total": total, "ok": ok, "pend": total - ok,
+            "adesao": adesao, "streak": _streak(datas)}
+
+
 # ==========================================================================
 # TELA DE LOGIN / CADASTRO
 # ==========================================================================
@@ -121,8 +159,53 @@ def tela_login():
 # ==========================================================================
 # PAGINA GENERICA DE TAREFAS
 # ==========================================================================
+def _bloco_recorrentes(categoria, dica, email_alvo):
+    """Painel (admin) para criar/gerenciar tarefas que se repetem sozinhas."""
+    with st.expander("🔁 Tarefas recorrentes (repetem sozinhas)"):
+        st.caption("Crie um modelo e o app gera a tarefa automaticamente nos dias escolhidos.")
+        with st.form(f"rec_{categoria}", clear_on_submit=True):
+            titulo = st.text_input("Título *", placeholder=dica, key=f"rt_{categoria}")
+            descricao = st.text_area("Descrição / instruções", key=f"rd_{categoria}")
+            freq = st.radio("Frequência", ["Diária", "Dias da semana"],
+                            horizontal=True, key=f"rf_{categoria}")
+            dias_sel = st.multiselect("Dias da semana (se escolher 'Dias da semana')",
+                                      DIAS_SEMANA, key=f"rds_{categoria}")
+            criar = st.form_submit_button("➕ Criar recorrente", width='stretch')
+        if criar:
+            if not titulo.strip():
+                st.error("Dê um título.")
+            elif freq == "Dias da semana" and not dias_sel:
+                st.error("Escolha ao menos um dia da semana.")
+            else:
+                frequencia = "Diária" if freq == "Diária" else "Semanal"
+                idxs = (",".join(str(DIAS_SEMANA.index(d)) for d in dias_sel)
+                        if frequencia == "Semanal" else "")
+                db.criar_recorrente(email_alvo, categoria, titulo.strip(),
+                                    descricao.strip(), frequencia, idxs)
+                st.success("Recorrente criada! A tarefa de hoje já foi gerada (se for o dia).")
+                st.rerun()
+
+        recs = db.listar_recorrentes(email_alvo, categoria)
+        if recs.empty:
+            st.caption("Nenhuma tarefa recorrente nesta categoria.")
+        else:
+            st.markdown("**Ativas:**")
+            for _, r in recs.iterrows():
+                if r["frequencia"] == "Diária":
+                    quando = "Todo dia"
+                else:
+                    quando = "Toda " + ", ".join(
+                        DIAS_SEMANA[int(i)] for i in str(r["dias_semana"]).split(",") if i != "")
+                cols = st.columns([6, 1])
+                cols[0].markdown(f"🔁 **{r['titulo']}** — {quando}")
+                if cols[1].button("🗑️", key=f"delrec_{r['id']}"):
+                    db.excluir_recorrente(r["id"])
+                    st.rerun()
+
+
 def pagina_tarefas(categoria, emoji, dica, email_alvo, modo_admin):
     st.markdown(f"## {emoji} {categoria}")
+    garantir_recorrentes(email_alvo)  # cria as tarefas recorrentes de hoje
 
     with st.expander("📖 Como usar esta área"):
         if modo_admin:
@@ -155,6 +238,8 @@ def pagina_tarefas(categoria, emoji, dica, email_alvo, modo_admin):
                                     prazo.strftime("%Y-%m-%d") if prazo else "")
                     st.success("Tarefa adicionada!")
                     st.rerun()
+
+        _bloco_recorrentes(categoria, dica, email_alvo)
 
     df = db.listar_tarefas(email_alvo, categoria)
     if df.empty:
@@ -431,18 +516,21 @@ def pagina_inicio_usuario(user):
     </div>""", unsafe_allow_html=True)
 
     email = user["email"]
+    garantir_recorrentes(email)  # garante as tarefas recorrentes de hoje
     tarefas = db.listar_tarefas(email)
     metas = db.listar_metas(email)
     evo = db.listar_evolucao(email)
+    s = stats_tarefas(tarefas)
 
-    pend = len(tarefas[tarefas["status"] != "Concluida"]) if not tarefas.empty else 0
-    ok = len(tarefas[tarefas["status"] == "Concluida"]) if not tarefas.empty else 0
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("⏳ Tarefas pendentes", pend)
-    c2.metric("✅ Concluídas", ok)
-    c3.metric("🎯 Metas ativas",
-              len(metas[metas["status"] == "Em andamento"]) if not metas.empty else 0)
+    c1.metric("🔥 Sequência", f"{s['streak']} dia(s)")
+    c2.metric("📊 Adesão", f"{s['adesao']}%")
+    c3.metric("⏳ Pendentes", s["pend"])
     c4.metric("⚖️ Peso atual", f"{num(evo.iloc[-1]['peso']):.1f} kg" if not evo.empty else "—")
+    c5, c6 = st.columns(2)
+    c5.metric("✅ Tarefas concluídas", s["ok"])
+    c6.metric("🎯 Metas ativas",
+              len(metas[metas["status"] == "Em andamento"]) if not metas.empty else 0)
 
     st.markdown("""
     <div class="card"><h4>🧭 Como usar</h4>
@@ -490,14 +578,13 @@ def pagina_usuarios():
 
     geral = db.listar_todas_tarefas()
     for _, u in comuns.iterrows():
-        t = geral[geral["usuario_email"] == u["email"]] if not geral.empty else geral
-        pend = len(t[t["status"] != "Concluida"]) if not t.empty else 0
-        ok = len(t[t["status"] == "Concluida"]) if not t.empty else 0
+        t = geral[geral["usuario_email"] == u["email"]] if not geral.empty else geral.copy()
+        s = stats_tarefas(t)
         st.markdown(f"""
         <div class="card">
-            <h4>{u['nome']}</h4>
+            <h4>{u['nome']} &nbsp;<span style="color:#22c55e;font-size:.85rem">🔥 {s['streak']} dia(s) · {s['adesao']}% adesão</span></h4>
             <p>📧 {u['email']} &nbsp;•&nbsp; cadastrado em {u['data_cadastro']}</p>
-            <p>⏳ {pend} pendentes &nbsp;•&nbsp; ✅ {ok} concluídas</p>
+            <p>⏳ {s['pend']} pendentes &nbsp;•&nbsp; ✅ {s['ok']} concluídas</p>
         </div>""", unsafe_allow_html=True)
 
         with st.expander("🔑 Redefinir senha desta pessoa"):
