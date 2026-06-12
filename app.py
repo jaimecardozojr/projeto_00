@@ -897,19 +897,27 @@ def pagina_plano_ia(user):
         return
 
     if treino and treino.get("dias"):
-        if st.button("🏋️ Salvar treino como tarefas recorrentes", key="save_treino",
-                     width='stretch'):
-            criados, ignorados = 0, []
+        st.caption("Cada dia vira uma tarefa recorrente separada, que aparece "
+                   "automaticamente no seu dia da semana.")
+        if st.button("🏋️ Salvar treino (uma tarefa por dia da semana)",
+                     key="save_treino", width='stretch'):
+            criados, ignorados = [], []
             for dia in treino["dias"]:
                 idx = _dia_para_idx(dia.get("dia", ""))
                 if idx is None:
                     ignorados.append(dia.get("dia", "?"))
                     continue
+                nome_dia = DIAS_FULL[idx]
                 db.criar_recorrente(email_alvo, "Exercícios",
-                                    f"Treino: {dia.get('foco', 'do dia')}",
+                                    f"Treino {nome_dia}: {dia.get('foco', 'do dia')}",
                                     _desc_treino_dia(dia), "Semanal", str(idx))
-                criados += 1
-            st.success(f"{criados} treino(s) recorrente(s) criado(s) para {nome_alvo}. ✅")
+                criados.append(f"{nome_dia} ({dia.get('foco', '')})")
+            if criados:
+                st.success(f"{len(criados)} treino(s) criado(s) para {nome_alvo}:")
+                for c in criados:
+                    st.markdown(f"- 🗓️ {c}")
+                st.caption("Cada um aparece em Exercícios no respectivo dia (e fica "
+                           "listado em 🔁 Tarefas recorrentes).")
             if ignorados:
                 st.caption(f"Não consegui identificar o dia de: {', '.join(ignorados)}.")
 
