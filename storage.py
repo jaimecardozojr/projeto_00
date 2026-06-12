@@ -25,7 +25,7 @@ import streamlit as st
 SCHEMAS = {
     "usuarios": [
         "email", "nome", "senha_hash", "salt", "perfil", "data_cadastro",
-        "sexo", "idade", "altura",
+        "sexo", "idade", "altura", "nascimento",
     ],
     "tarefas": [
         "id", "usuario_email", "categoria", "titulo", "descricao", "prazo",
@@ -339,19 +339,32 @@ def atualizar_usuario(email: str, campos: dict):
     _invalidar()
 
 
+def idade_de_nascimento(nascimento: str):
+    """Idade (anos) a partir de 'YYYY-MM-DD'; None se invalido/vazio."""
+    try:
+        d = datetime.strptime(str(nascimento), "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+    hoje = datetime.now().date()
+    return hoje.year - d.year - ((hoje.month, hoje.day) < (d.month, d.day))
+
+
 def perfil_fisico(email: str) -> dict:
-    """Dados fisicos salvos do usuario (sexo/idade/altura) + peso do ultimo registro."""
+    """Dados do perfil: sexo/altura salvos, idade calculada do nascimento,
+    peso do ultimo registro de evolucao."""
     u = get_usuario(email) or {}
     peso = ""
     evo = listar_evolucao(email)
     if not evo.empty:
         peso = evo.iloc[-1]["peso"]
-    return {"sexo": u.get("sexo", ""), "idade": u.get("idade", ""),
-            "altura": u.get("altura", ""), "peso": peso}
+    nasc = u.get("nascimento", "")
+    return {"sexo": u.get("sexo", ""), "nascimento": nasc,
+            "idade": idade_de_nascimento(nasc), "altura": u.get("altura", ""),
+            "peso": peso}
 
 
-def salvar_perfil_fisico(email: str, sexo, idade, altura):
-    atualizar_usuario(email, {"sexo": str(sexo), "idade": str(idade),
+def salvar_perfil_fisico(email: str, sexo, nascimento, altura):
+    atualizar_usuario(email, {"sexo": str(sexo), "nascimento": str(nascimento),
                               "altura": str(altura)})
 
 

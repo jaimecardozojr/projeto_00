@@ -776,19 +776,30 @@ def pagina_perfil(user):
 
     pf = db.perfil_fisico(email_alvo)
     OP_SEXO = ["—", "Feminino", "Masculino"]
+    nasc_atual = None
+    try:
+        nasc_atual = datetime.strptime(pf.get("nascimento", ""), "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        nasc_atual = None
+
     st.markdown("#### Dados pessoais")
     with st.form(f"form_perfil_{email_alvo}"):
         c = st.columns(3)
         sexo = c[0].selectbox("Sexo", OP_SEXO,
                               index=OP_SEXO.index(pf["sexo"]) if pf.get("sexo") in OP_SEXO else 0)
-        idade = c[1].number_input("Idade", 0, 120,
-                                  max(0, min(120, int(num(pf.get("idade"), 0)))))
+        nascimento = c[1].date_input("Data de nascimento", value=nasc_atual,
+                                     min_value=date(1900, 1, 1), max_value=date.today(),
+                                     format="DD/MM/YYYY")
         altura = c[2].number_input("Altura (cm)", 0, 250,
                                    max(0, min(250, int(num(pf.get("altura"), 0)))))
+        if nascimento:
+            ida = db.idade_de_nascimento(nascimento.strftime("%Y-%m-%d"))
+            st.caption(f"Idade: **{ida} anos** (calculada automaticamente).")
         ok = st.form_submit_button("💾 Salvar perfil", width='stretch')
     if ok:
         db.salvar_perfil_fisico(email_alvo, sexo if sexo != "—" else "",
-                                int(idade), int(altura))
+                                nascimento.strftime("%Y-%m-%d") if nascimento else "",
+                                int(altura))
         st.success("Perfil salvo! ✅")
         st.rerun()
 
@@ -858,14 +869,22 @@ def pagina_plano_ia(user):
     if user["perfil"] == "admin":
         st.caption(f"Plano para: **{nome_alvo}**")
 
+    # Dados fisicos vem do Perfil (sexo/idade/altura) + peso da Evolucao
     pf = db.perfil_fisico(email_alvo)
-    OP_SEXO = ["—", "Feminino", "Masculino"]
-    sexo_idx = OP_SEXO.index(pf["sexo"]) if pf.get("sexo") in OP_SEXO else 0
-    idade_def = max(0, min(100, int(num(pf.get("idade"), 0))))
-    altura_def = max(0, min(250, int(num(pf.get("altura"), 0))))
-    peso_def = max(0.0, min(300.0, float(num(pf.get("peso"), 0.0))))
-    if pf.get("idade") or pf.get("altura") or pf.get("peso") or pf.get("sexo"):
-        st.caption("✅ Dados do perfil preenchidos automaticamente (você pode ajustar).")
+    perfil = []
+    if pf.get("sexo"):
+        perfil.append(f"Sexo: {pf['sexo']}")
+    if pf.get("idade") is not None:
+        perfil.append(f"Idade: {pf['idade']} anos")
+    if num(pf.get("altura"), 0):
+        perfil.append(f"Altura: {num(pf['altura']):g}cm")
+    if num(pf.get("peso"), 0):
+        perfil.append(f"Peso: {num(pf['peso']):g}kg")
+    if perfil:
+        st.success("📋 Dados do perfil (puxados automaticamente): " + " · ".join(perfil))
+    else:
+        st.warning("Sem dados de perfil. Preencha em 👤 **Perfil** para um plano melhor "
+                   "(o plano ainda funciona sem eles).")
 
     with st.form("form_plano"):
         tipo = st.radio("O que gerar?", ["Treino", "Dieta", "Ambos"], horizontal=True)
@@ -874,13 +893,6 @@ def pagina_plano_ia(user):
                                   ["Emagrecer", "Ganhar massa muscular",
                                    "Manter / condicionamento"])
         nivel = c[1].selectbox("Nível", ["Iniciante", "Intermediário", "Avançado"])
-        c2 = st.columns(4)
-        sexo = c2[0].selectbox("Sexo", OP_SEXO, index=sexo_idx, key=f"pl_sexo_{email_alvo}")
-        idade = c2[1].number_input("Idade", 0, 100, idade_def, key=f"pl_idade_{email_alvo}")
-        peso = c2[2].number_input("Peso (kg)", 0.0, 300.0, peso_def, step=0.5,
-                                  key=f"pl_peso_{email_alvo}")
-        altura = c2[3].number_input("Altura (cm)", 0, 250, altura_def,
-                                    key=f"pl_altura_{email_alvo}")
         c3 = st.columns(3)
         dias_treino = c3[0].number_input("Treinos/semana", 1, 7, 3)
         local = c3[1].selectbox("Local do treino", ["Academia", "Casa", "Ar livre"])
@@ -895,16 +907,6 @@ def pagina_plano_ia(user):
         gerar = st.form_submit_button("✨ Gerar plano", width='stretch')
 
     if gerar:
-        # memoriza o perfil fisico para nao precisar digitar de novo
-        db.salvar_perfil_fisico(email_alvo, sexo if sexo != "—" else "",
-                                int(idade), int(altura))
-        perfil = []
-        if sexo != "—":
-            perfil.append(f"Sexo: {sexo}")
-        for rotulo, val, suf in [("Idade", idade, ""), ("Peso", peso, "kg"),
-                                 ("Altura", altura, "cm")]:
-            if val:
-                perfil.append(f"{rotulo}: {val:g}{suf}")
         params = {
             "objetivo": objetivo, "nivel": nivel, "perfil": "; ".join(perfil),
             "dias_treino": int(dias_treino), "local": local,
