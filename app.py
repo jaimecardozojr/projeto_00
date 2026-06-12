@@ -272,14 +272,29 @@ def pagina_tarefas(categoria, emoji, dica, email_alvo, modo_admin):
             _card_concluida(t, modo_admin)
 
 
+@st.dialog("Detalhes da tarefa")
+def _modal_detalhes(titulo, descricao, foto_ref=""):
+    st.markdown(f"### {titulo}")
+    if descricao and str(descricao).strip():
+        st.markdown(str(descricao).replace("\n", "  \n"))
+    else:
+        st.caption("Esta tarefa não tem detalhes.")
+    if foto_ref:
+        foto = db.ler_foto(foto_ref)
+        if foto:
+            st.image(foto, caption="Comprovação", width='stretch')
+
+
 def _card_pendente(t, modo_admin):
     prazo = f"🗓️ Prazo: {t['prazo']}" if t["prazo"] else ""
     st.markdown(f"""
     <div class="card card-pendente">
         <h4>{t['titulo']} {chip_status(t['status'])}</h4>
-        <p>{t['descricao'] or 'Sem descrição.'}</p>
         <p>{prazo}</p>
     </div>""", unsafe_allow_html=True)
+
+    if st.button("👁️ Ver detalhes", key=f"det_{t['id']}", width='stretch'):
+        _modal_detalhes(t["titulo"], t["descricao"])
 
     if modo_admin:
         if st.button("🗑️ Excluir", key=f"del_{t['id']}"):
@@ -306,17 +321,12 @@ def _card_concluida(t, modo_admin):
     st.markdown(f"""
     <div class="card card-ok">
         <h4>{t['titulo']} {chip_status(t['status'])}</h4>
-        <p>{t['descricao'] or ''}</p>
         <p>✅ Concluída em: {t['data_conclusao']}</p>
         {f"<p>📝 {t['observacao']}</p>" if t['observacao'] else ""}
     </div>""", unsafe_allow_html=True)
 
-    if t["foto_ref"]:
-        foto = db.ler_foto(t["foto_ref"])
-        if foto:
-            st.image(foto, width=320, caption="Comprovação")
-        else:
-            st.caption("⚠️ Não foi possível carregar a foto.")
+    if st.button("👁️ Ver detalhes e foto", key=f"det_{t['id']}", width='stretch'):
+        _modal_detalhes(t["titulo"], t["descricao"], t["foto_ref"])
 
     col1, col2 = st.columns(2)
     if col1.button("↩️ Reabrir", key=f"reab_{t['id']}"):
@@ -718,9 +728,19 @@ def pagina_refeicao_ia(user):
 # ==========================================================================
 # PAGINA PLANO IA (treino + dieta)
 # ==========================================================================
-_DIA_IDX = {"segunda": 0, "terca": 1, "terça": 1, "quarta": 2, "quinta": 3,
-            "sexta": 4, "sabado": 5, "sábado": 5, "domingo": 6}
 DIAS_FULL = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+_DIA_BASE = {"segunda": 0, "terca": 1, "quarta": 2, "quinta": 3,
+             "sexta": 4, "sabado": 5, "domingo": 6}
+
+
+def _dia_para_idx(nome):
+    """Converte 'Segunda', 'segunda-feira', 'Terça' etc. no indice 0..6 (ou None)."""
+    n = str(nome).strip().lower()
+    for a, b in [("á", "a"), ("ã", "a"), ("â", "a"), ("é", "e"), ("ê", "e"),
+                 ("í", "i"), ("ó", "o"), ("ô", "o"), ("ú", "u"), ("ç", "c")]:
+        n = n.replace(a, b)
+    n = n.replace("-feira", "").replace("feira", "").strip()
+    return _DIA_BASE.get(n)
 
 
 def _alvo_para_salvar(user, key):
@@ -825,7 +845,9 @@ def pagina_plano_ia(user):
         st.markdown("### 🏋️ Treino")
         st.caption("Você pode mudar o dia da semana de cada treino e/ou trocar os exercícios.")
         for i, dia in enumerate(treino["dias"]):
-            cur = _DIA_IDX.get(str(dia.get("dia", "")).strip().lower(), i % 7)
+            cur = _dia_para_idx(dia.get("dia", ""))
+            if cur is None:
+                cur = i % 7
             cab = st.columns([2, 3])
             novo_dia = cab[0].selectbox("Dia da semana", DIAS_FULL, index=cur,
                                         key=f"diasel_{i}")
@@ -873,8 +895,7 @@ def pagina_plano_ia(user):
                      width='stretch'):
             criados, ignorados = 0, []
             for dia in treino["dias"]:
-                nome_dia = str(dia.get("dia", "")).strip().lower()
-                idx = _DIA_IDX.get(nome_dia)
+                idx = _dia_para_idx(dia.get("dia", ""))
                 if idx is None:
                     ignorados.append(dia.get("dia", "?"))
                     continue
