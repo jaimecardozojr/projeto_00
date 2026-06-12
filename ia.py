@@ -135,3 +135,38 @@ def gerar_plano(tipo: str, dados: dict) -> dict:
     )
     resp.raise_for_status()
     return json.loads(resp.json()["choices"][0]["message"]["content"])
+
+
+_FMT_DIA = ('{"dia":"string","foco":"string","exercicios":'
+            '[{"nome":"string","series":"string","reps":"string","descanso":"string"}]}')
+
+
+def regenerar_treino_dia(dia_nome: str, dados: dict) -> dict:
+    """Gera uma nova variacao de treino para um dia especifico."""
+    chave = st.secrets["deepseek"]["api_key"]
+    ctx = [f"Objetivo: {dados.get('objetivo')}.", f"Nivel: {dados.get('nivel')}.",
+           f"Local do treino: {dados.get('local')}."]
+    if dados.get("perfil"):
+        ctx.append(dados["perfil"])
+    if dados.get("obs"):
+        ctx.append(f"Observacoes: {dados['obs']}.")
+    prompt = (" ".join(ctx) + f"\nGere um treino DIFERENTE (nova variacao) para {dia_nome}. "
+              f"Mantenha o campo 'dia' como '{dia_nome}'. "
+              f"Retorne um JSON exatamente neste formato: {_FMT_DIA}")
+    payload = {
+        "model": _MODELO,
+        "messages": [
+            {"role": "system", "content": _SISTEMA_PLANO},
+            {"role": "user", "content": prompt},
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.6,
+        "stream": False,
+    }
+    resp = requests.post(
+        _URL, json=payload, timeout=60,
+        headers={"Authorization": f"Bearer {chave}",
+                 "Content-Type": "application/json"},
+    )
+    resp.raise_for_status()
+    return json.loads(resp.json()["choices"][0]["message"]["content"])

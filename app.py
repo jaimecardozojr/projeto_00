@@ -802,13 +802,14 @@ def pagina_plano_ia(user):
                                  ("Altura", altura, "cm")]:
             if val:
                 perfil.append(f"{rotulo}: {val:g}{suf}")
+        params = {
+            "objetivo": objetivo, "nivel": nivel, "perfil": "; ".join(perfil),
+            "dias_treino": int(dias_treino), "local": local,
+            "calorias": int(calorias), "restricoes": restricoes, "obs": obs}
         try:
             with st.spinner("Montando o plano com a IA... (pode levar alguns segundos)"):
-                plano = ia.gerar_plano(tipo, {
-                    "objetivo": objetivo, "nivel": nivel, "perfil": "; ".join(perfil),
-                    "dias_treino": int(dias_treino), "local": local,
-                    "calorias": int(calorias), "restricoes": restricoes, "obs": obs})
-            st.session_state["plano_ia"] = {"plano": plano, "tipo": tipo}
+                plano = ia.gerar_plano(tipo, params)
+            st.session_state["plano_ia"] = {"plano": plano, "tipo": tipo, "params": params}
         except Exception as e:
             st.session_state.pop("plano_ia", None)
             st.error(f"Não foi possível gerar agora. Detalhe: {e}")
@@ -822,13 +823,23 @@ def pagina_plano_ia(user):
 
     if treino and treino.get("dias"):
         st.markdown("### 🏋️ Treino")
-        for dia in treino["dias"]:
+        for i, dia in enumerate(treino["dias"]):
             st.markdown(f"**{dia.get('dia', '')}** — {dia.get('foco', '')}")
             ex = pd.DataFrame(dia.get("exercicios", []))
             if not ex.empty:
                 ex = ex.rename(columns={"nome": "Exercício", "series": "Séries",
                                         "reps": "Reps", "descanso": "Descanso"})
                 st.dataframe(ex, width='stretch', hide_index=True)
+            if st.button(f"🔄 Trocar treino de {dia.get('dia', 'este dia')}",
+                         key=f"troca_{i}"):
+                try:
+                    with st.spinner("Gerando nova variação..."):
+                        novo = ia.regenerar_treino_dia(dia.get("dia", ""),
+                                                       dados.get("params", {}))
+                    treino["dias"][i] = novo  # plano vive na sessao (mesma referencia)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Não foi possível trocar agora. Detalhe: {e}")
         if treino.get("observacao"):
             st.info(f"📝 {treino['observacao']}")
 
