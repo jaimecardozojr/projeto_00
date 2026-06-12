@@ -513,7 +513,18 @@ def pagina_usuarios():
 # ==========================================================================
 # PAGINA REFEICAO IA (DeepSeek)
 # ==========================================================================
-def pagina_refeicao_ia():
+def _descricao_refeicao(r, calorias):
+    total = num(r.get("total_calorias"), calorias)
+    linhas = [f"Refeição de ~{total:.0f} kcal:"]
+    for it in r.get("itens", []):
+        linhas.append(f"• {it.get('alimento')}: {it.get('gramas')} g "
+                      f"(~{it.get('calorias')} kcal)")
+    if r.get("observacao"):
+        linhas.append(f"Obs: {r['observacao']}")
+    return "\n".join(linhas)
+
+
+def pagina_refeicao_ia(user):
     st.markdown("## 🍽️ Refeição IA")
 
     with st.expander("📖 Como usar esta área"):
@@ -521,7 +532,7 @@ def pagina_refeicao_ia():
         Digite os **alimentos** que você quer na refeição e a **meta de calorias**.
         A IA calcula a **porção (em gramas)** de cada alimento para chegar perto da meta,
         com calorias e macronutrientes. Ex: *arroz, feijão, brócolis, peixe tilápia* →
-        600 kcal.
+        600 kcal. Depois você pode **salvar como tarefa de alimentação**.
         💡 Os valores são estimativas para orientação, não substituem um nutricionista.
         """)
 
@@ -543,32 +554,58 @@ def pagina_refeicao_ia():
     if gerar:
         if not alimentos.strip():
             st.error("Digite ao menos um alimento.")
-            return
-        try:
-            with st.spinner("Calculando porções com a IA..."):
-                r = ia.gerar_refeicao(alimentos.strip(), int(calorias), restricoes)
-        except Exception as e:
-            st.error(f"Não foi possível gerar agora. Detalhe: {e}")
-            return
+        else:
+            try:
+                with st.spinner("Calculando porções com a IA..."):
+                    r = ia.gerar_refeicao(alimentos.strip(), int(calorias), restricoes)
+                st.session_state["refeicao_ia"] = {"r": r, "calorias": int(calorias)}
+            except Exception as e:
+                st.session_state.pop("refeicao_ia", None)
+                st.error(f"Não foi possível gerar agora. Detalhe: {e}")
 
-        itens = r.get("itens", [])
-        if not itens:
-            st.warning("A IA não retornou itens. Tente reescrever os alimentos.")
+    dados = st.session_state.get("refeicao_ia")
+    if not dados:
+        return
+    r, calorias = dados["r"], dados["calorias"]
+    itens = r.get("itens", [])
+    if not itens:
+        st.warning("A IA não retornou itens. Tente reescrever os alimentos.")
+        return
+
+    tabela = pd.DataFrame(itens).rename(columns={
+        "alimento": "Alimento", "gramas": "Porção (g)", "calorias": "Calorias",
+        "proteina_g": "Proteína (g)", "carbo_g": "Carbo (g)", "gordura_g": "Gordura (g)"})
+    st.markdown("### Porções sugeridas")
+    st.dataframe(tabela, width='stretch', hide_index=True)
+    if r.get("total_calorias"):
+        st.metric("🔥 Total estimado", f"{num(r['total_calorias']):.0f} kcal",
+                  f"meta: {int(calorias)} kcal")
+    if r.get("observacao"):
+        st.info(f"📝 {r['observacao']}")
+
+    # ---- salvar como tarefa de alimentacao ----
+    st.markdown("### 📌 Salvar como tarefa de alimentação")
+    admin = user["perfil"] == "admin"
+    if admin:
+        usuarios = db.listar_usuarios()
+        comuns = usuarios[usuarios["perfil"] != "admin"] if not usuarios.empty else usuarios
+        if comuns.empty:
+            st.info("Cadastre um usuário para poder criar a tarefa.")
             return
+        mapa = {f"{x['nome']} ({x['email']})": x["email"] for _, x in comuns.iterrows()}
+        rotulo = st.selectbox("Criar tarefa para qual usuário?", list(mapa.keys()),
+                              key="ref_alvo")
+        email_alvo = mapa[rotulo]
+    else:
+        email_alvo = user["email"]
 
-        tabela = pd.DataFrame(itens)
-        rotulos = {"alimento": "Alimento", "gramas": "Porção (g)", "calorias": "Calorias",
-                   "proteina_g": "Proteína (g)", "carbo_g": "Carbo (g)",
-                   "gordura_g": "Gordura (g)"}
-        tabela = tabela.rename(columns=rotulos)
-        st.markdown("### Porções sugeridas")
-        st.dataframe(tabela, width='stretch', hide_index=True)
-
-        total = r.get("total_calorias")
-        if total:
-            st.metric("🔥 Total estimado", f"{num(total):.0f} kcal", f"meta: {int(calorias)} kcal")
-        if r.get("observacao"):
-            st.info(f"📝 {r['observacao']}")
+    titulo = st.text_input("Título da tarefa", value=f"Refeição ~{int(calorias)} kcal",
+                           key="ref_titulo")
+    if st.button("💾 Salvar como tarefa", key="ref_salvar", width='stretch'):
+        db.criar_tarefa(email_alvo, "Alimentação",
+                        titulo.strip() or f"Refeição ~{int(calorias)} kcal",
+                        _descricao_refeicao(r, calorias), "")
+        st.success("Tarefa de alimentação criada! ✅")
 
 
 # ==========================================================================
@@ -631,7 +668,7 @@ def app_principal(user):
         pagina_usuarios()
         return
     if escolha == "Refeição IA":
-        pagina_refeicao_ia()
+        pagina_refeicao_ia(user)
         return
 
     # paginas por-usuario
