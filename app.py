@@ -716,6 +716,169 @@ def pagina_refeicao_ia(user):
 
 
 # ==========================================================================
+# PAGINA PLANO IA (treino + dieta)
+# ==========================================================================
+_DIA_IDX = {"segunda": 0, "terca": 1, "terça": 1, "quarta": 2, "quinta": 3,
+            "sexta": 4, "sabado": 5, "sábado": 5, "domingo": 6}
+
+
+def _alvo_para_salvar(user, key):
+    """Retorna (email_alvo, nome) ou (None, None). Admin escolhe; usuario e ele mesmo."""
+    if user["perfil"] != "admin":
+        return user["email"], user["nome"]
+    usuarios = db.listar_usuarios()
+    comuns = usuarios[usuarios["perfil"] != "admin"] if not usuarios.empty else usuarios
+    if comuns.empty:
+        st.info("Cadastre um usuário para poder salvar o plano como tarefas.")
+        return None, None
+    mapa = {f"{x['nome']} ({x['email']})": x["email"] for _, x in comuns.iterrows()}
+    rotulo = st.selectbox("Salvar para qual usuário?", list(mapa.keys()), key=key)
+    return mapa[rotulo], rotulo.split(" (")[0]
+
+
+def _desc_treino_dia(dia):
+    linhas = [f"Foco: {dia.get('foco', '')}"]
+    for ex in dia.get("exercicios", []):
+        desc = f"• {ex.get('nome')}: {ex.get('series')}x{ex.get('reps')}"
+        if ex.get("descanso"):
+            desc += f" (descanso {ex.get('descanso')})"
+        linhas.append(desc)
+    return "\n".join(linhas)
+
+
+def _desc_dieta(dieta):
+    linhas = []
+    if dieta.get("calorias_alvo"):
+        linhas.append(f"Meta: ~{num(dieta['calorias_alvo']):.0f} kcal/dia")
+    for ref in dieta.get("refeicoes", []):
+        linhas.append(f"[{ref.get('nome')}]")
+        for it in ref.get("itens", []):
+            linhas.append(f"• {it.get('alimento')}: {it.get('porcao')} "
+                          f"(~{it.get('calorias')} kcal)")
+    return "\n".join(linhas)
+
+
+def pagina_plano_ia(user):
+    st.markdown("## 🤖 Plano IA (treino e dieta)")
+
+    with st.expander("📖 Como usar esta área"):
+        st.markdown("""
+        Escolha gerar **Treino**, **Dieta** ou **Ambos**, informe objetivo, nível e
+        preferências, e a IA monta um plano semanal. Depois você pode **salvar** o treino
+        como tarefas recorrentes (nos dias da semana) e a dieta como tarefa diária.
+        💡 É uma sugestão automática — revise antes de aplicar.
+        """)
+
+    if not ia.tem_chave():
+        st.warning("A chave do DeepSeek ainda não foi configurada. "
+                   "Adicione `[deepseek]` com `api_key` no `secrets.toml`.")
+        return
+
+    with st.form("form_plano"):
+        tipo = st.radio("O que gerar?", ["Treino", "Dieta", "Ambos"], horizontal=True)
+        c = st.columns(2)
+        objetivo = c[0].selectbox("Objetivo",
+                                  ["Emagrecer", "Ganhar massa muscular",
+                                   "Manter / condicionamento"])
+        nivel = c[1].selectbox("Nível", ["Iniciante", "Intermediário", "Avançado"])
+        c2 = st.columns(4)
+        sexo = c2[0].selectbox("Sexo", ["—", "Feminino", "Masculino"])
+        idade = c2[1].number_input("Idade", 0, 100, 0)
+        peso = c2[2].number_input("Peso (kg)", 0.0, 300.0, 0.0, step=0.5)
+        altura = c2[3].number_input("Altura (cm)", 0, 250, 0)
+        c3 = st.columns(3)
+        dias_treino = c3[0].number_input("Treinos/semana", 1, 7, 3)
+        local = c3[1].selectbox("Local do treino", ["Academia", "Casa", "Ar livre"])
+        calorias = c3[2].number_input("Calorias/dia (0 = IA decide)", 0, 6000, 0, step=50)
+        restricoes = st.text_input("Restrições/preferências alimentares (opcional)")
+        obs = st.text_input("Observações (opcional)")
+        gerar = st.form_submit_button("✨ Gerar plano", width='stretch')
+
+    if gerar:
+        perfil = []
+        if sexo != "—":
+            perfil.append(f"Sexo: {sexo}")
+        for rotulo, val, suf in [("Idade", idade, ""), ("Peso", peso, "kg"),
+                                 ("Altura", altura, "cm")]:
+            if val:
+                perfil.append(f"{rotulo}: {val:g}{suf}")
+        try:
+            with st.spinner("Montando o plano com a IA... (pode levar alguns segundos)"):
+                plano = ia.gerar_plano(tipo, {
+                    "objetivo": objetivo, "nivel": nivel, "perfil": "; ".join(perfil),
+                    "dias_treino": int(dias_treino), "local": local,
+                    "calorias": int(calorias), "restricoes": restricoes, "obs": obs})
+            st.session_state["plano_ia"] = {"plano": plano, "tipo": tipo}
+        except Exception as e:
+            st.session_state.pop("plano_ia", None)
+            st.error(f"Não foi possível gerar agora. Detalhe: {e}")
+
+    dados = st.session_state.get("plano_ia")
+    if not dados:
+        return
+    plano = dados["plano"]
+    treino = plano.get("treino")
+    dieta = plano.get("dieta")
+
+    if treino and treino.get("dias"):
+        st.markdown("### 🏋️ Treino")
+        for dia in treino["dias"]:
+            st.markdown(f"**{dia.get('dia', '')}** — {dia.get('foco', '')}")
+            ex = pd.DataFrame(dia.get("exercicios", []))
+            if not ex.empty:
+                ex = ex.rename(columns={"nome": "Exercício", "series": "Séries",
+                                        "reps": "Reps", "descanso": "Descanso"})
+                st.dataframe(ex, width='stretch', hide_index=True)
+        if treino.get("observacao"):
+            st.info(f"📝 {treino['observacao']}")
+
+    if dieta and dieta.get("refeicoes"):
+        st.markdown("### 🥗 Dieta")
+        if dieta.get("calorias_alvo"):
+            st.metric("🔥 Meta diária", f"{num(dieta['calorias_alvo']):.0f} kcal")
+        for ref in dieta["refeicoes"]:
+            st.markdown(f"**{ref.get('nome', '')}**")
+            its = pd.DataFrame(ref.get("itens", []))
+            if not its.empty:
+                its = its.rename(columns={"alimento": "Alimento", "porcao": "Porção",
+                                          "calorias": "Calorias"})
+                st.dataframe(its, width='stretch', hide_index=True)
+        if dieta.get("observacao"):
+            st.info(f"📝 {dieta['observacao']}")
+
+    # ---- salvar como tarefas ----
+    st.markdown("### 📌 Salvar plano como tarefas")
+    email_alvo, nome_alvo = _alvo_para_salvar(user, "plano_alvo")
+    if not email_alvo:
+        return
+
+    if treino and treino.get("dias"):
+        if st.button("🏋️ Salvar treino como tarefas recorrentes", key="save_treino",
+                     width='stretch'):
+            criados, ignorados = 0, []
+            for dia in treino["dias"]:
+                nome_dia = str(dia.get("dia", "")).strip().lower()
+                idx = _DIA_IDX.get(nome_dia)
+                if idx is None:
+                    ignorados.append(dia.get("dia", "?"))
+                    continue
+                db.criar_recorrente(email_alvo, "Exercícios",
+                                    f"Treino: {dia.get('foco', 'do dia')}",
+                                    _desc_treino_dia(dia), "Semanal", str(idx))
+                criados += 1
+            st.success(f"{criados} treino(s) recorrente(s) criado(s) para {nome_alvo}. ✅")
+            if ignorados:
+                st.caption(f"Não consegui identificar o dia de: {', '.join(ignorados)}.")
+
+    if dieta and dieta.get("refeicoes"):
+        if st.button("🥗 Salvar dieta como tarefa diária", key="save_dieta",
+                     width='stretch'):
+            db.criar_recorrente(email_alvo, "Alimentação", "Seguir o plano alimentar",
+                                _desc_dieta(dieta), "Diária", "")
+            st.success(f"Dieta diária criada para {nome_alvo}. ✅")
+
+
+# ==========================================================================
 # BARRA LATERAL + ROTEAMENTO
 # ==========================================================================
 def app_principal(user):
@@ -727,13 +890,14 @@ def app_principal(user):
 
         if admin:
             opcoes = ["Início", "Usuários", "Alimentação", "Exercícios", "Metas",
-                      "Evolução", "Refeição IA"]
+                      "Evolução", "Refeição IA", "Plano IA"]
             icones = ["house", "people", "egg-fried", "bicycle", "bullseye",
-                      "graph-up-arrow", "stars"]
+                      "graph-up-arrow", "stars", "robot"]
         else:
             opcoes = ["Início", "Alimentação", "Exercícios", "Metas", "Evolução",
-                      "Refeição IA"]
-            icones = ["house", "egg-fried", "bicycle", "bullseye", "graph-up-arrow", "stars"]
+                      "Refeição IA", "Plano IA"]
+            icones = ["house", "egg-fried", "bicycle", "bullseye", "graph-up-arrow",
+                      "stars", "robot"]
 
         escolha = option_menu(
             menu_title=None, options=opcoes, icons=icones, default_index=0,
@@ -776,6 +940,9 @@ def app_principal(user):
         return
     if escolha == "Refeição IA":
         pagina_refeicao_ia(user)
+        return
+    if escolha == "Plano IA":
+        pagina_plano_ia(user)
         return
 
     # paginas por-usuario
