@@ -12,6 +12,7 @@ import streamlit as st
 from streamlit_option_menu import option_menu
 
 import auth
+import ia
 import storage as db
 
 COOKIE = "acomp_token"
@@ -510,6 +511,67 @@ def pagina_usuarios():
 
 
 # ==========================================================================
+# PAGINA REFEICAO IA (DeepSeek)
+# ==========================================================================
+def pagina_refeicao_ia():
+    st.markdown("## 🍽️ Refeição IA")
+
+    with st.expander("📖 Como usar esta área"):
+        st.markdown("""
+        Digite os **alimentos** que você quer na refeição e a **meta de calorias**.
+        A IA calcula a **porção (em gramas)** de cada alimento para chegar perto da meta,
+        com calorias e macronutrientes. Ex: *arroz, feijão, brócolis, peixe tilápia* →
+        600 kcal.
+        💡 Os valores são estimativas para orientação, não substituem um nutricionista.
+        """)
+
+    if not ia.tem_chave():
+        st.warning("A chave do DeepSeek ainda não foi configurada. "
+                   "Adicione `[deepseek]` com `api_key` no `secrets.toml`.")
+        return
+
+    with st.form("form_refeicao"):
+        alimentos = st.text_area("Alimentos da refeição *",
+                                 placeholder="Ex: arroz, feijão, brócolis, peixe tilápia")
+        col = st.columns(2)
+        calorias = col[0].number_input("Meta de calorias (kcal)", min_value=50,
+                                       max_value=3000, value=600, step=50)
+        restricoes = col[1].text_input("Observações (opcional)",
+                                       placeholder="ex: pouco óleo, sem sal")
+        gerar = st.form_submit_button("✨ Gerar refeição", width='stretch')
+
+    if gerar:
+        if not alimentos.strip():
+            st.error("Digite ao menos um alimento.")
+            return
+        try:
+            with st.spinner("Calculando porções com a IA..."):
+                r = ia.gerar_refeicao(alimentos.strip(), int(calorias), restricoes)
+        except Exception as e:
+            st.error(f"Não foi possível gerar agora. Detalhe: {e}")
+            return
+
+        itens = r.get("itens", [])
+        if not itens:
+            st.warning("A IA não retornou itens. Tente reescrever os alimentos.")
+            return
+
+        tabela = pd.DataFrame(itens)
+        rotulos = {"alimento": "Alimento", "gramas": "Porção (g)", "calorias": "Calorias",
+                   "proteina_g": "Proteína (g)", "carbo_g": "Carbo (g)",
+                   "gordura_g": "Gordura (g)"}
+        tabela = tabela.rename(columns=rotulos)
+        st.markdown("### Porções sugeridas")
+        st.dataframe(tabela, width='stretch', hide_index=True)
+
+        total = r.get("total_calorias")
+        if total:
+            st.metric("🔥 Total estimado", f"{num(total):.0f} kcal", f"meta: {int(calorias)} kcal")
+        if r.get("observacao"):
+            st.info(f"📝 {r['observacao']}")
+
+
+# ==========================================================================
 # BARRA LATERAL + ROTEAMENTO
 # ==========================================================================
 def app_principal(user):
@@ -520,11 +582,14 @@ def app_principal(user):
         st.caption(f"👤 {user['nome']}" + (" • **Admin**" if admin else ""))
 
         if admin:
-            opcoes = ["Início", "Usuários", "Alimentação", "Exercícios", "Metas", "Evolução"]
-            icones = ["house", "people", "egg-fried", "bicycle", "bullseye", "graph-up-arrow"]
+            opcoes = ["Início", "Usuários", "Alimentação", "Exercícios", "Metas",
+                      "Evolução", "Refeição IA"]
+            icones = ["house", "people", "egg-fried", "bicycle", "bullseye",
+                      "graph-up-arrow", "stars"]
         else:
-            opcoes = ["Início", "Alimentação", "Exercícios", "Metas", "Evolução"]
-            icones = ["house", "egg-fried", "bicycle", "bullseye", "graph-up-arrow"]
+            opcoes = ["Início", "Alimentação", "Exercícios", "Metas", "Evolução",
+                      "Refeição IA"]
+            icones = ["house", "egg-fried", "bicycle", "bullseye", "graph-up-arrow", "stars"]
 
         escolha = option_menu(
             menu_title=None, options=opcoes, icons=icones, default_index=0,
@@ -564,6 +629,9 @@ def app_principal(user):
         return
     if escolha == "Usuários":
         pagina_usuarios()
+        return
+    if escolha == "Refeição IA":
+        pagina_refeicao_ia()
         return
 
     # paginas por-usuario
