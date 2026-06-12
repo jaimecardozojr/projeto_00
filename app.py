@@ -794,6 +794,22 @@ def pagina_plano_ia(user):
                    "Adicione `[deepseek]` com `api_key` no `secrets.toml`.")
         return
 
+    # Usuario do plano (no topo) -> usado para pre-preencher e para salvar
+    email_alvo, nome_alvo = _alvo_para_salvar(user, "plano_alvo")
+    if not email_alvo:
+        return
+    if user["perfil"] == "admin":
+        st.caption(f"Plano para: **{nome_alvo}**")
+
+    pf = db.perfil_fisico(email_alvo)
+    OP_SEXO = ["—", "Feminino", "Masculino"]
+    sexo_idx = OP_SEXO.index(pf["sexo"]) if pf.get("sexo") in OP_SEXO else 0
+    idade_def = max(0, min(100, int(num(pf.get("idade"), 0))))
+    altura_def = max(0, min(250, int(num(pf.get("altura"), 0))))
+    peso_def = max(0.0, min(300.0, float(num(pf.get("peso"), 0.0))))
+    if pf.get("idade") or pf.get("altura") or pf.get("peso") or pf.get("sexo"):
+        st.caption("✅ Dados do perfil preenchidos automaticamente (você pode ajustar).")
+
     with st.form("form_plano"):
         tipo = st.radio("O que gerar?", ["Treino", "Dieta", "Ambos"], horizontal=True)
         c = st.columns(2)
@@ -802,10 +818,12 @@ def pagina_plano_ia(user):
                                    "Manter / condicionamento"])
         nivel = c[1].selectbox("Nível", ["Iniciante", "Intermediário", "Avançado"])
         c2 = st.columns(4)
-        sexo = c2[0].selectbox("Sexo", ["—", "Feminino", "Masculino"])
-        idade = c2[1].number_input("Idade", 0, 100, 0)
-        peso = c2[2].number_input("Peso (kg)", 0.0, 300.0, 0.0, step=0.5)
-        altura = c2[3].number_input("Altura (cm)", 0, 250, 0)
+        sexo = c2[0].selectbox("Sexo", OP_SEXO, index=sexo_idx, key=f"pl_sexo_{email_alvo}")
+        idade = c2[1].number_input("Idade", 0, 100, idade_def, key=f"pl_idade_{email_alvo}")
+        peso = c2[2].number_input("Peso (kg)", 0.0, 300.0, peso_def, step=0.5,
+                                  key=f"pl_peso_{email_alvo}")
+        altura = c2[3].number_input("Altura (cm)", 0, 250, altura_def,
+                                    key=f"pl_altura_{email_alvo}")
         c3 = st.columns(3)
         dias_treino = c3[0].number_input("Treinos/semana", 1, 7, 3)
         local = c3[1].selectbox("Local do treino", ["Academia", "Casa", "Ar livre"])
@@ -820,6 +838,9 @@ def pagina_plano_ia(user):
         gerar = st.form_submit_button("✨ Gerar plano", width='stretch')
 
     if gerar:
+        # memoriza o perfil fisico para nao precisar digitar de novo
+        db.salvar_perfil_fisico(email_alvo, sexo if sexo != "—" else "",
+                                int(idade), int(altura))
         perfil = []
         if sexo != "—":
             perfil.append(f"Sexo: {sexo}")
@@ -890,11 +911,8 @@ def pagina_plano_ia(user):
         if dieta.get("observacao"):
             st.info(f"📝 {dieta['observacao']}")
 
-    # ---- salvar como tarefas ----
-    st.markdown("### 📌 Salvar plano como tarefas")
-    email_alvo, nome_alvo = _alvo_para_salvar(user, "plano_alvo")
-    if not email_alvo:
-        return
+    # ---- salvar como tarefas (email_alvo ja definido no topo) ----
+    st.markdown(f"### 📌 Salvar plano como tarefas — {nome_alvo}")
 
     if treino and treino.get("dias"):
         st.caption("Cada dia vira uma tarefa recorrente separada, que aparece "

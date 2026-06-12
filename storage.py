@@ -25,6 +25,7 @@ import streamlit as st
 SCHEMAS = {
     "usuarios": [
         "email", "nome", "senha_hash", "salt", "perfil", "data_cadastro",
+        "sexo", "idade", "altura",
     ],
     "tarefas": [
         "id", "usuario_email", "categoria", "titulo", "descricao", "prazo",
@@ -336,6 +337,22 @@ def criar_usuario(linha: dict):
 def atualizar_usuario(email: str, campos: dict):
     get_storage().update("usuarios", email, campos)
     _invalidar()
+
+
+def perfil_fisico(email: str) -> dict:
+    """Dados fisicos salvos do usuario (sexo/idade/altura) + peso do ultimo registro."""
+    u = get_usuario(email) or {}
+    peso = ""
+    evo = listar_evolucao(email)
+    if not evo.empty:
+        peso = evo.iloc[-1]["peso"]
+    return {"sexo": u.get("sexo", ""), "idade": u.get("idade", ""),
+            "altura": u.get("altura", ""), "peso": peso}
+
+
+def salvar_perfil_fisico(email: str, sexo, idade, altura):
+    atualizar_usuario(email, {"sexo": str(sexo), "idade": str(idade),
+                              "altura": str(altura)})
 
 
 # ---------- Tarefas ----------
