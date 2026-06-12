@@ -747,15 +747,14 @@ def _desc_treino_dia(dia):
     return "\n".join(linhas)
 
 
-def _desc_dieta(dieta):
+def _desc_uma_refeicao(ref):
+    """Descrição de uma única refeição (para virar uma tarefa própria)."""
     linhas = []
-    if dieta.get("calorias_alvo"):
-        linhas.append(f"Meta: ~{num(dieta['calorias_alvo']):.0f} kcal/dia")
-    for ref in dieta.get("refeicoes", []):
-        linhas.append(f"[{ref.get('nome')}]")
-        for it in ref.get("itens", []):
-            linhas.append(f"• {it.get('alimento')}: {it.get('porcao')} "
-                          f"(~{it.get('calorias')} kcal)")
+    for it in ref.get("itens", []):
+        linhas.append(f"• {it.get('alimento')}: {it.get('porcao')} "
+                      f"(~{it.get('calorias')} kcal)")
+    if ref.get("observacao"):
+        linhas.append(f"Obs: {ref['observacao']}")
     return "\n".join(linhas)
 
 
@@ -888,11 +887,17 @@ def pagina_plano_ia(user):
                 st.caption(f"Não consegui identificar o dia de: {', '.join(ignorados)}.")
 
     if dieta and dieta.get("refeicoes"):
-        if st.button("🥗 Salvar dieta como tarefa diária", key="save_dieta",
+        st.caption("Cada refeição vira uma tarefa diária separada (ex: Café da manhã, "
+                   "Almoço, Lanche da tarde, Jantar).")
+        if st.button("🥗 Salvar cada refeição como tarefa diária", key="save_dieta",
                      width='stretch'):
-            db.criar_recorrente(email_alvo, "Alimentação", "Seguir o plano alimentar",
-                                _desc_dieta(dieta), "Diária", "")
-            st.success(f"Dieta diária criada para {nome_alvo}. ✅")
+            n = 0
+            for ref in dieta["refeicoes"]:
+                nome = str(ref.get("nome", "Refeição")).strip() or "Refeição"
+                db.criar_recorrente(email_alvo, "Alimentação", nome,
+                                    _desc_uma_refeicao(ref), "Diária", "")
+                n += 1
+            st.success(f"{n} refeição(ões) criada(s) como tarefas diárias para {nome_alvo}. ✅")
 
 
 # ==========================================================================
