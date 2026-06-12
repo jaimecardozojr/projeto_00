@@ -720,6 +720,7 @@ def pagina_refeicao_ia(user):
 # ==========================================================================
 _DIA_IDX = {"segunda": 0, "terca": 1, "terça": 1, "quarta": 2, "quinta": 3,
             "sexta": 4, "sabado": 5, "sábado": 5, "domingo": 6}
+DIAS_FULL = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
 
 
 def _alvo_para_salvar(user, key):
@@ -823,23 +824,28 @@ def pagina_plano_ia(user):
 
     if treino and treino.get("dias"):
         st.markdown("### 🏋️ Treino")
+        st.caption("Você pode mudar o dia da semana de cada treino e/ou trocar os exercícios.")
         for i, dia in enumerate(treino["dias"]):
-            st.markdown(f"**{dia.get('dia', '')}** — {dia.get('foco', '')}")
+            cur = _DIA_IDX.get(str(dia.get("dia", "")).strip().lower(), i % 7)
+            cab = st.columns([2, 3])
+            novo_dia = cab[0].selectbox("Dia da semana", DIAS_FULL, index=cur,
+                                        key=f"diasel_{i}")
+            dia["dia"] = novo_dia  # plano vive na sessao (mesma referencia)
+            cab[1].markdown(f"**Foco:** {dia.get('foco', '')}")
             ex = pd.DataFrame(dia.get("exercicios", []))
             if not ex.empty:
                 ex = ex.rename(columns={"nome": "Exercício", "series": "Séries",
                                         "reps": "Reps", "descanso": "Descanso"})
                 st.dataframe(ex, width='stretch', hide_index=True)
-            if st.button(f"🔄 Trocar treino de {dia.get('dia', 'este dia')}",
-                         key=f"troca_{i}"):
+            if st.button("🔄 Trocar os exercícios deste dia", key=f"troca_{i}"):
                 try:
                     with st.spinner("Gerando nova variação..."):
-                        novo = ia.regenerar_treino_dia(dia.get("dia", ""),
-                                                       dados.get("params", {}))
-                    treino["dias"][i] = novo  # plano vive na sessao (mesma referencia)
+                        novo = ia.regenerar_treino_dia(novo_dia, dados.get("params", {}))
+                    treino["dias"][i] = novo
                     st.rerun()
                 except Exception as e:
                     st.error(f"Não foi possível trocar agora. Detalhe: {e}")
+            st.divider()
         if treino.get("observacao"):
             st.info(f"📝 {treino['observacao']}")
 
