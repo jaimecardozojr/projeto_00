@@ -513,12 +513,23 @@ def pagina_usuarios():
 # ==========================================================================
 # PAGINA REFEICAO IA (DeepSeek)
 # ==========================================================================
+def _totais_macros(r):
+    p = sum(num(it.get("proteina_g")) for it in r.get("itens", []))
+    c = sum(num(it.get("carbo_g")) for it in r.get("itens", []))
+    g = sum(num(it.get("gordura_g")) for it in r.get("itens", []))
+    return p, c, g
+
+
 def _descricao_refeicao(r, calorias):
     total = num(r.get("total_calorias"), calorias)
     linhas = [f"Refeição de ~{total:.0f} kcal:"]
     for it in r.get("itens", []):
+        p, c, g = num(it.get("proteina_g")), num(it.get("carbo_g")), num(it.get("gordura_g"))
         linhas.append(f"• {it.get('alimento')}: {it.get('gramas')} g "
-                      f"(~{it.get('calorias')} kcal)")
+                      f"(~{it.get('calorias')} kcal | P {p:.0f}g · C {c:.0f}g · G {g:.0f}g)")
+    tp, tc, tg = _totais_macros(r)
+    linhas.append(f"Totais de macros → Proteína {tp:.0f}g · Carboidrato {tc:.0f}g · "
+                  f"Gordura {tg:.0f}g")
     if r.get("observacao"):
         linhas.append(f"Obs: {r['observacao']}")
     return "\n".join(linhas)
@@ -577,9 +588,15 @@ def pagina_refeicao_ia(user):
         "proteina_g": "Proteína (g)", "carbo_g": "Carbo (g)", "gordura_g": "Gordura (g)"})
     st.markdown("### Porções sugeridas")
     st.dataframe(tabela, width='stretch', hide_index=True)
+
+    tp, tc, tg = _totais_macros(r)
+    m = st.columns(4)
     if r.get("total_calorias"):
-        st.metric("🔥 Total estimado", f"{num(r['total_calorias']):.0f} kcal",
-                  f"meta: {int(calorias)} kcal")
+        m[0].metric("🔥 Calorias", f"{num(r['total_calorias']):.0f}",
+                    f"meta: {int(calorias)} kcal")
+    m[1].metric("🥩 Proteína", f"{tp:.0f} g")
+    m[2].metric("🍞 Carboidrato", f"{tc:.0f} g")
+    m[3].metric("🥑 Gordura", f"{tg:.0f} g")
     if r.get("observacao"):
         st.info(f"📝 {r['observacao']}")
 
