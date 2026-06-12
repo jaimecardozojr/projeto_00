@@ -83,7 +83,10 @@ def garantir_recorrentes(email):
     """Gera as tarefas recorrentes de hoje uma vez por sessao/dia (evita reler a planilha)."""
     chave = f"gen_{email}_{date.today().isoformat()}"
     if not st.session_state.get(chave):
-        db.gerar_recorrentes_do_dia(email)
+        try:
+            db.gerar_recorrentes_do_dia(email)
+        except Exception:
+            pass  # nunca derruba a pagina por causa da geracao
         st.session_state[chave] = True
 
 
