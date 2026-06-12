@@ -743,18 +743,75 @@ def _dia_para_idx(nome):
     return _DIA_BASE.get(n)
 
 
-def _alvo_para_salvar(user, key):
+def _alvo_para_salvar(user, key, rotulo="Salvar para qual usuário?"):
     """Retorna (email_alvo, nome) ou (None, None). Admin escolhe; usuario e ele mesmo."""
     if user["perfil"] != "admin":
         return user["email"], user["nome"]
     usuarios = db.listar_usuarios()
     comuns = usuarios[usuarios["perfil"] != "admin"] if not usuarios.empty else usuarios
     if comuns.empty:
-        st.info("Cadastre um usuário para poder salvar o plano como tarefas.")
+        st.info("Nenhum usuário cadastrado ainda.")
         return None, None
     mapa = {f"{x['nome']} ({x['email']})": x["email"] for _, x in comuns.iterrows()}
-    rotulo = st.selectbox("Salvar para qual usuário?", list(mapa.keys()), key=key)
-    return mapa[rotulo], rotulo.split(" (")[0]
+    escolha = st.selectbox(rotulo, list(mapa.keys()), key=key)
+    return mapa[escolha], escolha.split(" (")[0]
+
+
+def pagina_perfil(user):
+    st.markdown("## 👤 Perfil")
+    with st.expander("📖 Como usar esta área"):
+        st.markdown("""
+        Preencha seus **dados pessoais** (sexo, idade, altura) — eles ficam salvos e o
+        **Plano IA** usa automaticamente. Logo abaixo, as **medidas atuais** (peso e
+        medidas) aparecem sozinhas a partir do seu último registro em **📈 Evolução** e
+        se atualizam conforme você registra.
+        """)
+
+    email_alvo, nome_alvo = _alvo_para_salvar(user, "perfil_alvo",
+                                              "Ver/editar perfil de qual usuário?")
+    if not email_alvo:
+        return
+    if user["perfil"] == "admin":
+        st.caption(f"Editando perfil de: **{nome_alvo}**")
+
+    pf = db.perfil_fisico(email_alvo)
+    OP_SEXO = ["—", "Feminino", "Masculino"]
+    st.markdown("#### Dados pessoais")
+    with st.form(f"form_perfil_{email_alvo}"):
+        c = st.columns(3)
+        sexo = c[0].selectbox("Sexo", OP_SEXO,
+                              index=OP_SEXO.index(pf["sexo"]) if pf.get("sexo") in OP_SEXO else 0)
+        idade = c[1].number_input("Idade", 0, 120,
+                                  max(0, min(120, int(num(pf.get("idade"), 0)))))
+        altura = c[2].number_input("Altura (cm)", 0, 250,
+                                   max(0, min(250, int(num(pf.get("altura"), 0)))))
+        ok = st.form_submit_button("💾 Salvar perfil", width='stretch')
+    if ok:
+        db.salvar_perfil_fisico(email_alvo, sexo if sexo != "—" else "",
+                                int(idade), int(altura))
+        st.success("Perfil salvo! ✅")
+        st.rerun()
+
+    st.markdown("#### 📏 Medidas atuais")
+    st.caption("Atualizam automaticamente conforme os registros em 📈 Evolução.")
+    evo = db.listar_evolucao(email_alvo)
+    if evo.empty:
+        st.info("Nenhuma medida ainda. Registre em 📈 Evolução para aparecer aqui.")
+        return
+    u = evo.iloc[-1]
+
+    def _med(rotulo, campo, unidade="cm"):
+        v = num(u[campo], None)
+        return rotulo, (f"{v:.1f} {unidade}" if v else "—")
+
+    linha1 = [("⚖️ Peso", f"{num(u['peso']):.1f} kg" if num(u['peso'], None) else "—"),
+              _med("📏 Cintura", "cintura"), _med("Quadril", "quadril")]
+    linha2 = [_med("Braço", "braco"), _med("Coxa", "coxa"), _med("Peito", "peito")]
+    for linha in (linha1, linha2):
+        cols = st.columns(3)
+        for col, (rot, val) in zip(cols, linha):
+            col.metric(rot, val)
+    st.caption(f"Último registro: {u['data']}")
 
 
 def _desc_treino_dia(dia):
@@ -795,7 +852,7 @@ def pagina_plano_ia(user):
         return
 
     # Usuario do plano (no topo) -> usado para pre-preencher e para salvar
-    email_alvo, nome_alvo = _alvo_para_salvar(user, "plano_alvo")
+    email_alvo, nome_alvo = _alvo_para_salvar(user, "plano_alvo", "Usuário do plano:")
     if not email_alvo:
         return
     if user["perfil"] == "admin":
@@ -965,14 +1022,14 @@ def app_principal(user):
 
         if admin:
             opcoes = ["Início", "Usuários", "Alimentação", "Exercícios", "Metas",
-                      "Evolução", "Refeição IA", "Plano IA"]
+                      "Evolução", "Refeição IA", "Plano IA", "Perfil"]
             icones = ["house", "people", "egg-fried", "bicycle", "bullseye",
-                      "graph-up-arrow", "stars", "robot"]
+                      "graph-up-arrow", "stars", "robot", "person-circle"]
         else:
             opcoes = ["Início", "Alimentação", "Exercícios", "Metas", "Evolução",
-                      "Refeição IA", "Plano IA"]
+                      "Refeição IA", "Plano IA", "Perfil"]
             icones = ["house", "egg-fried", "bicycle", "bullseye", "graph-up-arrow",
-                      "stars", "robot"]
+                      "stars", "robot", "person-circle"]
 
         escolha = option_menu(
             menu_title=None, options=opcoes, icons=icones, default_index=0,
@@ -1018,6 +1075,9 @@ def app_principal(user):
         return
     if escolha == "Plano IA":
         pagina_plano_ia(user)
+        return
+    if escolha == "Perfil":
+        pagina_perfil(user)
         return
 
     # paginas por-usuario
