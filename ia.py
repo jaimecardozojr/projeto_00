@@ -145,6 +145,32 @@ def gerar_plano(tipo: str, dados: dict) -> dict:
     return json.loads(resp.json()["choices"][0]["message"]["content"])
 
 
+_SISTEMA_ASSIST = (
+    "Voce e o assistente do app 'Meu Acompanhamento' (acompanhamento fitness). "
+    "Ajude com duvidas sobre treinos, exercicios, alimentacao e sobre como usar o "
+    "app. Areas do app: Inicio, Alimentacao e Exercicios (tarefas, com foto de "
+    "comprovacao opcional), Metas, Evolucao (peso e medidas com graficos), "
+    "Refeicao IA (calcula porcoes para uma meta de calorias), Plano IA (gera "
+    "treino e dieta e salva como tarefas), Perfil (sexo, data de nascimento, "
+    "altura). Responda em portugues, de forma breve, pratica e amigavel. Para "
+    "questoes de saude serias, oriente procurar um profissional."
+)
+
+
+def perguntar_assistente(historico: list) -> str:
+    """historico: lista de {'role':'user'|'assistant','content':str}. Retorna a resposta."""
+    chave = st.secrets["deepseek"]["api_key"]
+    msgs = [{"role": "system", "content": _SISTEMA_ASSIST}]
+    msgs += [{"role": m["role"], "content": m["content"]} for m in historico[-10:]]
+    payload = {"model": _MODELO, "messages": msgs, "temperature": 0.5, "stream": False}
+    resp = requests.post(
+        _URL, json=payload, timeout=60,
+        headers={"Authorization": f"Bearer {chave}", "Content-Type": "application/json"},
+    )
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"]
+
+
 _FMT_DIA = ('{"dia":"string","foco":"string","exercicios":'
             '[{"nome":"string","series":"string","reps":"string","descanso":"string"}]}')
 

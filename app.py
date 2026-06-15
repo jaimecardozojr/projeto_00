@@ -1013,6 +1013,38 @@ def pagina_plano_ia(user):
 
 
 # ==========================================================================
+# ASSISTENTE IA (disponivel na barra lateral em todas as paginas)
+# ==========================================================================
+def _assistente_sidebar():
+    with st.expander("🤖 Assistente"):
+        if not ia.tem_chave():
+            st.caption("Configure a chave do DeepSeek para usar o assistente.")
+            return
+        st.caption("Tire dúvidas sobre treino, dieta ou como usar o app.")
+        hist = st.session_state.setdefault("chat_assist", [])
+        for m in hist:
+            quem = "🧑 **Você:**" if m["role"] == "user" else "🤖 **IA:**"
+            st.markdown(f"{quem} {m['content']}")
+        with st.form("assist_form", clear_on_submit=True):
+            pergunta = st.text_input("Sua pergunta", key="assist_q",
+                                     label_visibility="collapsed",
+                                     placeholder="Ex: como fazer agachamento correto?")
+            enviar = st.form_submit_button("Enviar", width='stretch')
+        if enviar and pergunta.strip():
+            hist.append({"role": "user", "content": pergunta.strip()})
+            try:
+                with st.spinner("Pensando..."):
+                    resp = ia.perguntar_assistente(hist)
+            except Exception as e:
+                resp = f"Não consegui responder agora. Detalhe: {e}"
+            hist.append({"role": "assistant", "content": resp})
+            st.rerun()
+        if hist and st.button("🧹 Limpar conversa", key="assist_clear", width='stretch'):
+            st.session_state["chat_assist"] = []
+            st.rerun()
+
+
+# ==========================================================================
 # BARRA LATERAL + ROTEAMENTO
 # ==========================================================================
 def app_principal(user):
@@ -1055,6 +1087,9 @@ def app_principal(user):
                         for _, r in comuns.iterrows()}
                 rotulo = st.selectbox("👤 Gerenciando", list(mapa.keys()), key="alvo_sel")
                 email_alvo, nome_alvo = mapa[rotulo], rotulo.split(" (")[0]
+
+        st.divider()
+        _assistente_sidebar()
 
         st.divider()
         if st.button("🚪 Sair", width='stretch'):
