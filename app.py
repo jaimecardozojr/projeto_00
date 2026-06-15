@@ -221,8 +221,9 @@ def pagina_tarefas(categoria, emoji, dica, email_alvo, modo_admin):
         else:
             st.markdown(f"""
             Aqui estão as tarefas que o seu treinador definiu para você.
-            Para concluir, clique em **✅ Concluir com foto**, envie a foto que
-            comprova (ex: *{dica}*) e confirme. As concluídas ficam na outra aba.
+            Para concluir, clique em **✅ Concluir tarefa**. A **foto é opcional** —
+            você pode enviar uma comprovação (ex: *{dica}*) ou só confirmar. As
+            concluídas ficam na outra aba.
             """)
 
     if modo_admin:
@@ -301,19 +302,18 @@ def _card_pendente(t, modo_admin):
             db.excluir_tarefa(t["id"])
             st.rerun()
     else:
-        with st.expander("✅ Concluir com foto"):
+        with st.expander("✅ Concluir tarefa"):
             with st.form(f"concluir_{t['id']}", clear_on_submit=True):
-                foto = st.file_uploader("Foto de comprovação",
+                foto = st.file_uploader("Foto de comprovação (opcional)",
                                         type=["jpg", "jpeg", "png"], key=f"up_{t['id']}")
                 obs = st.text_input("Observação (opcional)", key=f"obs_{t['id']}")
                 ok = st.form_submit_button("Confirmar conclusão", width='stretch')
             if ok:
-                if not foto:
-                    st.error("Envie uma foto para comprovar a conclusão.")
-                else:
-                    db.concluir_tarefa(t["id"], foto.getvalue(), foto.name, obs.strip())
-                    st.success("Tarefa concluída! 💪")
-                    st.rerun()
+                fb = foto.getvalue() if foto else None
+                nome = foto.name if foto else ""
+                db.concluir_tarefa(t["id"], fb, nome, obs.strip())
+                st.success("Tarefa concluída! 💪")
+                st.rerun()
     st.divider()
 
 
