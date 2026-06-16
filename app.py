@@ -3,6 +3,7 @@ App de Acompanhamento (multiusuario) - Tarefas, Metas e Evolucao
 Login com perfis: ADMIN (gerencia todos) e USUARIO (cumpre as proprias tarefas).
 Rode com:  python -m streamlit run app.py
 """
+import html
 from datetime import date, datetime, timedelta
 
 import extra_streamlit_components as stx
@@ -64,6 +65,11 @@ def num(v, padrao=0.0):
         return float(str(v).replace(",", "."))
     except (ValueError, TypeError):
         return padrao
+
+
+def esc(v):
+    """Escapa texto para uso seguro dentro de HTML (evita XSS)."""
+    return html.escape(str(v if v is not None else ""))
 
 
 def _streak(datas_iso: set) -> int:
@@ -128,20 +134,26 @@ def tela_login():
                 manter = st.checkbox("Manter conectado neste dispositivo", value=True)
                 ok = st.form_submit_button("Entrar", width='stretch')
             if ok:
-                user = auth.autenticar(email, senha)
-                if user:
-                    st.session_state["user"] = user
-                    if manter:
-                        # grava o cookie e PARA o run; o proprio componente de
-                        # cookie dispara o rerun depois de gravar no navegador
-                        # (chamar st.rerun() aqui cancelaria a gravacao).
-                        cookie_mgr.set(COOKIE, auth.gerar_token(user["email"]),
-                                       expires_at=datetime.now() + timedelta(days=30))
-                        st.success("Entrando...")
-                        st.stop()
-                    st.rerun()
+                espera = auth.segundos_bloqueio(email)
+                if espera > 0:
+                    st.error(f"Muitas tentativas. Tente novamente em {espera} segundos.")
                 else:
-                    st.error("Email ou senha incorretos.")
+                    user = auth.autenticar(email, senha)
+                    if user:
+                        auth.limpar_falhas(email)
+                        st.session_state["user"] = user
+                        if manter:
+                            # grava o cookie e PARA o run; o proprio componente de
+                            # cookie dispara o rerun depois de gravar no navegador
+                            # (chamar st.rerun() aqui cancelaria a gravacao).
+                            cookie_mgr.set(COOKIE, auth.gerar_token(user["email"]),
+                                           expires_at=datetime.now() + timedelta(days=30))
+                            st.success("Entrando...")
+                            st.stop()
+                        st.rerun()
+                    else:
+                        auth.registrar_falha(email)
+                        st.error("Email ou senha incorretos.")
 
         with aba_cadastrar:
             st.caption("Crie sua conta com o seu email. É rápido!")
@@ -287,10 +299,10 @@ def _modal_detalhes(titulo, descricao, foto_ref=""):
 
 
 def _card_pendente(t, modo_admin):
-    prazo = f"🗓️ Prazo: {t['prazo']}" if t["prazo"] else ""
+    prazo = f"🗓️ Prazo: {esc(t['prazo'])}" if t["prazo"] else ""
     st.markdown(f"""
     <div class="card card-pendente">
-        <h4>{t['titulo']} {chip_status(t['status'])}</h4>
+        <h4>{esc(t['titulo'])} {chip_status(t['status'])}</h4>
         <p>{prazo}</p>
     </div>""", unsafe_allow_html=True)
 
@@ -320,9 +332,9 @@ def _card_pendente(t, modo_admin):
 def _card_concluida(t, modo_admin):
     st.markdown(f"""
     <div class="card card-ok">
-        <h4>{t['titulo']} {chip_status(t['status'])}</h4>
-        <p>✅ Concluída em: {t['data_conclusao']}</p>
-        {f"<p>📝 {t['observacao']}</p>" if t['observacao'] else ""}
+        <h4>{esc(t['titulo'])} {chip_status(t['status'])}</h4>
+        <p>✅ Concluída em: {esc(t['data_conclusao'])}</p>
+        {f"<p>📝 {esc(t['observacao'])}</p>" if t['observacao'] else ""}
     </div>""", unsafe_allow_html=True)
 
     if st.button("👁️ Ver detalhes e foto", key=f"det_{t['id']}", width='stretch'):
@@ -395,11 +407,11 @@ def pagina_metas(email_alvo, modo_admin):
         concluida = m["status"] == "Concluida"
         st.markdown(f"""
         <div class="card {'card-ok' if concluida else 'card-pendente'}">
-            <h4>{m['titulo']} {'✅' if concluida else ''}
-                <span style="color:#64748b;font-size:.8rem">({m['categoria']})</span></h4>
-            <p>{m['descricao'] or ''}</p>
-            <p>{atual:g} / {alvo:g} {m['unidade']} &nbsp;•&nbsp; {prog*100:.0f}% concluído
-               {f"&nbsp;•&nbsp; 🗓️ {m['prazo']}" if m['prazo'] else ""}</p>
+            <h4>{esc(m['titulo'])} {'✅' if concluida else ''}
+                <span style="color:#64748b;font-size:.8rem">({esc(m['categoria'])})</span></h4>
+            <p>{esc(m['descricao'] or '')}</p>
+            <p>{atual:g} / {alvo:g} {esc(m['unidade'])} &nbsp;•&nbsp; {prog*100:.0f}% concluído
+               {f"&nbsp;•&nbsp; 🗓️ {esc(m['prazo'])}" if m['prazo'] else ""}</p>
         </div>""", unsafe_allow_html=True)
         st.progress(prog)
 
@@ -524,7 +536,7 @@ def pagina_evolucao(email_alvo, modo_admin):
 def pagina_inicio_usuario(user):
     st.markdown(f"""
     <div class="hero">
-        <h1>Olá, {user['nome']}! 💪</h1>
+        <h1>Olá, {esc(user['nome'])}! 💪</h1>
         <p>Cumpra suas tarefas, acompanhe metas e registre sua evolução.</p>
     </div>""", unsafe_allow_html=True)
 
@@ -557,7 +569,7 @@ def pagina_inicio_admin(user):
     st.markdown(f"""
     <div class="hero">
         <h1>Painel do Admin 👋</h1>
-        <p>Bem-vindo, {user['nome']}. Gerencie tarefas, metas e evolução dos usuários.</p>
+        <p>Bem-vindo, {esc(user['nome'])}. Gerencie tarefas, metas e evolução dos usuários.</p>
     </div>""", unsafe_allow_html=True)
 
     usuarios = db.listar_usuarios()
@@ -595,8 +607,8 @@ def pagina_usuarios():
         s = stats_tarefas(t)
         st.markdown(f"""
         <div class="card">
-            <h4>{u['nome']} &nbsp;<span style="color:#22c55e;font-size:.85rem">🔥 {s['streak']} dia(s) · {s['adesao']}% adesão</span></h4>
-            <p>📧 {u['email']} &nbsp;•&nbsp; cadastrado em {u['data_cadastro']}</p>
+            <h4>{esc(u['nome'])} &nbsp;<span style="color:#22c55e;font-size:.85rem">🔥 {s['streak']} dia(s) · {s['adesao']}% adesão</span></h4>
+            <p>📧 {esc(u['email'])} &nbsp;•&nbsp; cadastrado em {esc(u['data_cadastro'])}</p>
             <p>⏳ {s['pend']} pendentes &nbsp;•&nbsp; ✅ {s['ok']} concluídas</p>
         </div>""", unsafe_allow_html=True)
 

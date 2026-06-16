@@ -34,6 +34,41 @@ def is_admin(email: str) -> bool:
     return str(email).lower() in admin_emails()
 
 
+# --------------------------------------------------------------------------
+# Limite de tentativas de login (anti forca-bruta).
+# Guardado em memoria do servidor (compartilhado entre sessoes) -> sem custo no Sheets.
+# --------------------------------------------------------------------------
+MAX_TENTATIVAS = 5
+BLOQUEIO_SEG = 300  # 5 minutos
+
+
+@st.cache_resource
+def _tentativas_store():
+    return {}  # email -> {"fail": int, "ate": float}
+
+
+def segundos_bloqueio(email: str) -> int:
+    """Quantos segundos faltam de bloqueio para este email (0 = liberado)."""
+    s = _tentativas_store().get(str(email).strip().lower())
+    if not s:
+        return 0
+    return max(0, int(s.get("ate", 0) - time.time()))
+
+
+def registrar_falha(email: str):
+    store = _tentativas_store()
+    e = str(email).strip().lower()
+    s = store.setdefault(e, {"fail": 0, "ate": 0.0})
+    s["fail"] += 1
+    if s["fail"] >= MAX_TENTATIVAS:
+        s["ate"] = time.time() + BLOQUEIO_SEG
+        s["fail"] = 0
+
+
+def limpar_falhas(email: str):
+    _tentativas_store().pop(str(email).strip().lower(), None)
+
+
 def _hash(senha: str, salt_hex: str) -> str:
     dk = hashlib.pbkdf2_hmac("sha256", senha.encode("utf-8"),
                              bytes.fromhex(salt_hex), _ITERACOES)
