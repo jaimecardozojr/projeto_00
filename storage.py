@@ -215,8 +215,9 @@ class GoogleStorage:
 
     def append(self, tabela: str, linha: dict):
         cols = SCHEMAS[tabela]
+        # RAW: grava o texto literal (nunca interpreta como formula -> sem injecao)
         self._ws(tabela).append_row([str(linha.get(c, "")) for c in cols],
-                                    value_input_option="USER_ENTERED")
+                                    value_input_option="RAW")
 
     def _row_index(self, tabela: str, id_: str) -> int | None:
         ids = self._ws(tabela).col_values(1)  # coluna "id"
@@ -226,14 +227,17 @@ class GoogleStorage:
         return None
 
     def update(self, tabela: str, id_: str, campos: dict):
+        import gspread
         ws = self._ws(tabela)
         linha = self._row_index(tabela, id_)
         if not linha:
             return
         cols = SCHEMAS[tabela]
-        for k, v in campos.items():
-            if k in cols:
-                ws.update_cell(linha, cols.index(k) + 1, str(v))
+        celulas = [gspread.Cell(linha, cols.index(k) + 1, str(v))
+                   for k, v in campos.items() if k in cols]
+        if celulas:
+            # RAW: nao interpreta '=' etc. como formula (evita injecao no Sheets)
+            ws.update_cells(celulas, value_input_option="RAW")
 
     def delete(self, tabela: str, id_: str):
         linha = self._row_index(tabela, id_)

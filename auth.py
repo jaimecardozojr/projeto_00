@@ -82,8 +82,8 @@ def registrar(nome: str, email: str, senha: str) -> tuple[bool, str]:
         return False, "Informe seu nome."
     if not _EMAIL_RE.match(email):
         return False, "Email invalido."
-    if len(senha) < 4:
-        return False, "A senha deve ter ao menos 4 caracteres."
+    if len(senha) < 8:
+        return False, "A senha deve ter ao menos 8 caracteres."
     if db.get_usuario(email):
         return False, "Ja existe uma conta com este email."
 
@@ -111,8 +111,8 @@ def autenticar(email: str, senha: str) -> dict | None:
 def redefinir_senha(email: str, nova_senha: str) -> tuple[bool, str]:
     """Admin define uma nova senha provisoria para um usuario."""
     email = email.strip().lower()
-    if len(nova_senha) < 4:
-        return False, "A nova senha deve ter ao menos 4 caracteres."
+    if len(nova_senha) < 8:
+        return False, "A nova senha deve ter ao menos 8 caracteres."
     if not db.get_usuario(email):
         return False, "Usuário não encontrado."
     salt = os.urandom(16).hex()
